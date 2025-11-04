@@ -11,19 +11,19 @@ This repository includes automated deployment workflows for Cloudflare Workers u
 - Manual trigger via GitHub Actions tab
 
 **What it does:**
-- Checks out code
 - Installs dependencies
+- Fetches Cloudflare Account ID (from secret or API)
 - Deploys to Cloudflare Workers production
 
-### 2. Preview Deployment (`preview.yml`)
+### 2. Pull Request Validation (`preview.yml`)
 
 **Triggers:**
 - Pull requests to `main` branch
 
 **What it does:**
-- Validates the deployment configuration
-- Performs a dry-run deployment
-- Comments on the PR with status
+- Validates `services.json` syntax
+- Validates `wrangler.toml` configuration (dry-run)
+- Comments on PR with validation status
 
 ## Setup Instructions
 
@@ -39,26 +39,35 @@ This repository includes automated deployment workflows for Cloudflare Workers u
 6. Click **Continue to summary** → **Create Token**
 7. **Copy the token** (you won't see it again!)
 
-### Step 2: Get Cloudflare Account ID
+### Step 2: Get Cloudflare Account ID (Optional)
 
+You have two options:
+
+**Option A: Let GitHub Actions fetch it automatically**
+- The workflow will fetch your Account ID using the API token
+- No additional secret needed
+
+**Option B: Provide it manually (recommended for faster deployments)**
 1. In Cloudflare Dashboard, go to **Workers & Pages**
 2. On the right sidebar, you'll see your **Account ID**
 3. Click to copy it
+4. Add it as a GitHub secret (see Step 3)
 
 ### Step 3: Add Secrets to GitHub Repository
 
 1. Go to your GitHub repository
 2. Click **Settings** → **Secrets and variables** → **Actions**
 3. Click **New repository secret**
-4. Add these two secrets:
+4. Add the required secret:
 
-**Secret 1:**
+**Required Secret:**
 - Name: `CLOUDFLARE_API_TOKEN`
 - Value: Your API token from Step 1
 
-**Secret 2:**
+**Optional Secret (but recommended):**
 - Name: `CLOUDFLARE_ACCOUNT_ID`
 - Value: Your Account ID from Step 2
+- Note: If not provided, it will be fetched automatically using the API
 
 ### Step 4: Commit and Push
 

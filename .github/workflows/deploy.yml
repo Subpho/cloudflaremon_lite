@@ -30,16 +30,16 @@ jobs:
             ACCOUNT_ID="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
             echo "Using provided CLOUDFLARE_ACCOUNT_ID from secrets."
           else
-            ACCOUNT_ID=$(curl -X GET "https://api.cloudflare.com/client/v4/accounts" -H "Authorization: Bearer ${apiToken}" -H "Content-Type:application/json" | jq ".result[0].id" -r)
-            if [[ "$ACCOUNT_ID" == "null" ]]; then
-              echo "Failed to get an account id, please make sure you have set up apiToken correctly!"
+            ACCOUNT_ID=$(curl -X GET "https://api.cloudflare.com/client/v4/accounts" \
+              -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+              -H "Content-Type: application/json" | jq -r ".result[0].id")
+            if [[ "$ACCOUNT_ID" == "null" || -z "$ACCOUNT_ID" ]]; then
+              echo "Failed to get account ID. Please set CLOUDFLARE_ACCOUNT_ID secret."
               exit 1
             fi
+            echo "Fetched Account ID from API."
           fi
-          echo 'account_id='$ACCOUNT_ID >> $GITHUB_OUTPUT
-
-        env:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          echo "account_id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
