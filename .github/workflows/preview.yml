@@ -81,25 +81,27 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const body = `✅ Configuration validated successfully!
+
+            **🎉 First-Time Setup Detected**
+
+            This appears to be your first deployment. Here's what will happen when you merge:
+
+            1. ✨ The deployment workflow will automatically run
+            2. 🏗️ Terraform will create the KV namespace
+            3. 📝 \`wrangler.toml\` will be updated with the namespace ID
+            4. 💾 Changes will be committed automatically
+            5. 🚀 Your worker will deploy successfully
+
+            **No manual steps required!** Just merge this PR and watch the automation work.
+
+            📖 [View Deployment Documentation](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/DEPLOYMENT.md)`;
+            
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `✅ Configuration validated successfully!
-
-**🎉 First-Time Setup Detected**
-
-This appears to be your first deployment. Here's what will happen when you merge:
-
-1. ✨ The deployment workflow will automatically run
-2. 🏗️ Terraform will create the KV namespace
-3. 📝 \`wrangler.toml\` will be updated with the namespace ID
-4. 💾 Changes will be committed automatically
-5. 🚀 Your worker will deploy successfully
-
-**No manual steps required!** Just merge this PR and watch the automation work.
-
-📖 [View Deployment Documentation](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/DEPLOYMENT.md)`
+              body: body
             })
 
       - name: Comment on PR (Normal)
