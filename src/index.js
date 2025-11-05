@@ -62,10 +62,26 @@ async function handleHeartbeat(request, env) {
       });
     }
 
-    // Validate API key if configured
-    if (service.apiKey) {
+    // Validate API key if configured in environment variable
+    // API_KEYS should be a JSON string mapping service IDs to their API keys
+    let expectedApiKey = null;
+    
+    if (env.API_KEYS) {
+      try {
+        const apiKeys = JSON.parse(env.API_KEYS);
+        expectedApiKey = apiKeys[data.serviceId];
+      } catch (error) {
+        console.error('Error parsing API_KEYS:', error);
+        return new Response(JSON.stringify({ error: 'Server configuration error' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    }
+    
+    if (expectedApiKey) {
       const authHeader = request.headers.get('Authorization');
-      if (authHeader !== `Bearer ${service.apiKey}`) {
+      if (authHeader !== `Bearer ${expectedApiKey}`) {
         return new Response(JSON.stringify({ error: 'Invalid API key' }), {
           status: 401,
           headers: { 'Content-Type': 'application/json' }

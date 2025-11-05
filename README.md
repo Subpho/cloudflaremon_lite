@@ -4,7 +4,7 @@
 
 A push-based Cloudflare Worker heartbeat monitoring solution for internal network services. Your internal services send heartbeats TO the Cloudflare Worker, eliminating the need to expose your services to the public internet.
 
-**📖 [View Full Documentation](docs/README.md)** | **🚀 [Quick Start Guide](docs/QUICKSTART.md)** | **🏗️ [Architecture](docs/ARCHITECTURE.md)**
+**📖 [View Full Documentation](docs/README.md)** | **🚀 [Quick Start Guide](docs/QUICKSTART.md)** | **🏗️ [Architecture](docs/ARCHITECTURE.md)** | **🔒 [Security Guide](docs/SECURITY.md)**
 
 ## Features
 
@@ -95,8 +95,7 @@ Edit `services.json` to add your services to monitor:
       "id": "my-service",
       "name": "My API Service",
       "enabled": true,
-      "stalenessThreshold": 300,
-      "apiKey": "your-secure-api-key-here"
+      "stalenessThreshold": 300
     }
   ]
 }
@@ -108,9 +107,27 @@ Edit `services.json` to add your services to monitor:
 - `name`: Display name for the service
 - `enabled`: Whether to monitor this service (true/false)
 - `stalenessThreshold`: Time in seconds before considering a service "down" if no heartbeat received (default: 300)
-- `apiKey`: Optional API key for authentication (recommended for security)
 
-### 5. Deploy the Worker
+### 5. 🔒 Configure API Keys (Recommended)
+
+**IMPORTANT:** Never store API keys in your repository! Use **one secret** containing all keys.
+
+Set API keys as a single Cloudflare Worker secret named `API_KEYS` (JSON format):
+
+```bash
+# Using Wrangler CLI
+npx wrangler secret put API_KEYS
+# Then paste: {"service-1":"your-key-1","service-2":"your-key-2"}
+
+# Or add to GitHub Secrets for CI/CD
+# Settings → Secrets and variables → Actions → New secret
+# Name: API_KEYS
+# Value: {"service-1":"your-key-1","service-2":"your-key-2"}
+```
+
+**📖 See [Security Guide](docs/SECURITY.md) for detailed setup instructions**
+
+### 6. Deploy the Worker
 
 #### Option A: Deploy Manually
 
@@ -415,31 +432,50 @@ The push-based architecture is very cost-effective!
 
 ## Security Considerations
 
-### API Keys
+### 🔒 API Keys (Recommended)
 
-- **Always use API keys** in production (`apiKey` field in `services.json`)
-- Generate strong, unique API keys for each service
-- Rotate API keys periodically
-- Keep API keys secure (don't commit to git if `services.json` contains real keys)
+**IMPORTANT:** API keys are stored as **one secret** in JSON format, NOT in your repository.
+
+- **Always use API keys** in production (set as Cloudflare Worker secret)
+- **Never commit API keys** to your repository
+- Generate strong, unique API keys for each service (use `openssl rand -base64 32`)
+- Store all keys in one `API_KEYS` secret as JSON
+- Rotate API keys periodically (every 90 days recommended)
+- Easy to add new services - just update the JSON
+
+**📖 Full setup guide:** [Security Documentation](docs/SECURITY.md)
+
+**Quick setup:**
+```bash
+# Generate strong API keys
+openssl rand -base64 32  # For service-1
+openssl rand -base64 32  # For service-2
+
+# Set them as one Cloudflare secret
+npx wrangler secret put API_KEYS
+# Paste: {"service-1":"key1","service-2":"key2"}
+```
 
 ### Dashboard Access
 
 - The dashboard is publicly accessible by default
 - Consider using Cloudflare Access to restrict dashboard access
 - No sensitive data is displayed (only service names and status)
-- For added security, implement basic authentication in the worker
+- API keys are never exposed through the dashboard or APIs
 
 ### Best Practices
 
 1. **Use HTTPS only**: All heartbeat clients use HTTPS
-2. **Rotate secrets**: Periodically rotate API keys
-3. **Monitor logs**: Use `npm run tail` to monitor for suspicious activity
-4. **Limit metadata**: Don't send sensitive data in heartbeat metadata
-5. **Firewall rules**: Restrict outbound access to only `*.workers.dev` if possible
+2. **Use environment variables**: Never hardcode secrets in code or config files
+3. **Rotate secrets**: Periodically rotate API keys
+4. **Monitor logs**: Use `npm run tail` to monitor for suspicious activity
+5. **Limit metadata**: Don't send sensitive data in heartbeat metadata
+6. **Firewall rules**: Restrict outbound access to only `*.workers.dev` if possible
 
 ### Data Privacy
 
-- Service IDs and names are stored in KV
+- Service IDs and names are stored in KV (non-sensitive)
+- API keys are stored encrypted in Cloudflare Secrets
 - No sensitive service data (URLs, IPs, credentials) is transmitted
 - Heartbeat metadata is optional and controlled by you
 - All data stored in Cloudflare's encrypted KV storage
@@ -448,6 +484,7 @@ The push-based architecture is very cost-effective!
 
 - **[Quick Start Guide](docs/QUICKSTART.md)** - Get started in 10 minutes
 - **[Architecture Overview](docs/ARCHITECTURE.md)** - System design and components
+- **[Security Guide](docs/SECURITY.md)** - API key management and best practices 🔒
 - **[Deployment Guide](docs/DEPLOYMENT.md)** - GitHub Actions setup
 - **[Setup Checklist](docs/SETUP_CHECKLIST.md)** - Pre-deployment checklist
 - **[Permissions Guide](docs/PERMISSIONS.md)** - GitHub Actions permissions
