@@ -4,15 +4,13 @@
       "id": "service-1",
       "name": "Internal API",
       "enabled": true,
-      "stalenessThreshold": 300,
-      "apiKey": "your-secret-key-1"
+      "stalenessThreshold": 300
     },
     {
       "id": "service-2",
       "name": "Database Service",
       "enabled": true,
-      "stalenessThreshold": 300,
-      "apiKey": "your-secret-key-2"
+      "stalenessThreshold": 300
     }
   ]
 }

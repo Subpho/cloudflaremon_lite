@@ -10,11 +10,6 @@ custom_domain = true
 binding = "HEARTBEAT_LOGS"
 id = "4bbad78883da446399f2cd8677b989ea"
 
-# Cron trigger - checks for stale heartbeats every 5 minutes
+# Cron trigger - checks for stale heartbeats every 10 minutes
 [triggers]
 crons = ["*/10 * * * *"]
-
-# Variables for configuration
-[vars]
-# Maximum number of log entries to keep per service
-MAX_LOG_ENTRIES = "100"
