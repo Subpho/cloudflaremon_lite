@@ -70,6 +70,11 @@ This directory contains automated CI/CD workflows for the Cloudflare Heartbeat M
 **Required Secrets:**
 - None (uses built-in `GITHUB_TOKEN`)
 
+**Required Permissions:**
+- `contents: read` - Read repository code
+- `pull-requests: write` - Comment on PRs
+- `issues: write` - Comment on issues/PRs
+
 **Duration:** ~1 minute
 
 ---
