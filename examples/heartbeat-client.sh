@@ -5,7 +5,7 @@
 # Run this periodically using cron or a system timer
 
 # Configuration
-WORKER_URL="https://heartbeat-monitor.your-subdomain.workers.dev/api/heartbeat"
+WORKER_URL="https://mon.pipdor.com/api/heartbeat"
 SERVICE_ID="service-1"
 API_KEY="your-secret-key-1"
 
@@ -30,6 +30,8 @@ EOF
 # Send heartbeat
 RESPONSE=$(curl -s -X POST "$WORKER_URL" \
   -H "Content-Type: application/json" \
+  -H "CF-Access-Client-Id: $CF_ID" \
+  -H "CF-Access-Client-Secret: $CF_SECRET" \
   -H "Authorization: Bearer $API_KEY" \
   -d "$JSON_PAYLOAD")
 

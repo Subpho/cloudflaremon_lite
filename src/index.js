@@ -15,8 +15,6 @@ export default {
     } else if (url.pathname === '/api/heartbeat' && request.method === 'POST') {
       // Receive heartbeat from internal services
       return handleHeartbeat(request, env);
-    } else if (url.pathname === '/api/logs') {
-      return handleGetLogs(env, url);
     } else if (url.pathname === '/api/status') {
       return handleGetStatus(env);
     } else if (url.pathname === '/api/uptime') {
@@ -77,21 +75,22 @@ async function handleHeartbeat(request, env) {
 
     const timestamp = new Date().toISOString();
     
-    // Create heartbeat record
-    const heartbeat = {
-      serviceId: data.serviceId,
-      serviceName: service.name,
-      timestamp: timestamp,
-      status: data.status || 'up',
-      metadata: data.metadata || {},
-      message: data.message || null
-    };
-
-    // Store heartbeat
-    await storeHeartbeat(env, heartbeat);
-    
-    // Update latest heartbeat timestamp
-    await env.HEARTBEAT_LOGS.put(`latest:${data.serviceId}`, timestamp);
+    // Update latest heartbeat timestamp in single consolidated store
+    try {
+      const monitorDataJson = await env.HEARTBEAT_LOGS.get('monitor:data');
+      const monitorData = monitorDataJson ? JSON.parse(monitorDataJson) : {
+        latest: {},
+        uptime: {},
+        summary: null
+      };
+      
+      if (!monitorData.latest) monitorData.latest = {};
+      monitorData.latest[data.serviceId] = timestamp;
+      
+      await env.HEARTBEAT_LOGS.put('monitor:data', JSON.stringify(monitorData));
+    } catch (error) {
+      console.error('Error updating latest heartbeat:', error);
+    }
 
     return new Response(JSON.stringify({ 
       success: true, 
@@ -118,13 +117,23 @@ async function checkHeartbeatStaleness(env) {
   const now = Date.now();
   const timestamp = new Date().toISOString();
 
+  // Get all monitor data in a single read
+  const monitorDataJson = await env.HEARTBEAT_LOGS.get('monitor:data');
+  const monitorData = monitorDataJson ? JSON.parse(monitorDataJson) : {
+    latest: {},
+    uptime: {},
+    summary: null
+  };
+
+  const latestData = monitorData.latest || {};
+
   for (const service of servicesConfig.services) {
     if (!service.enabled) {
       continue;
     }
 
     // Get latest heartbeat timestamp
-    const lastHeartbeatTime = await env.HEARTBEAT_LOGS.get(`latest:${service.id}`);
+    const lastHeartbeatTime = latestData[service.id];
     
     const stalenessThreshold = (service.stalenessThreshold || 300) * 1000; // Default 5 minutes
     
@@ -157,133 +166,62 @@ async function checkHeartbeatStaleness(env) {
     };
 
     results.push(result);
-
-    // Store result in logs
-    await storeHeartbeatLog(env, service.id, result);
   }
 
-  // Store summary
-  await storeSummary(env, results, timestamp);
-
-  // Store daily uptime statistics
-  await storeDailyUptime(env, results, timestamp);
+  // Update summary and uptime in the single store
+  await updateMonitorData(env, monitorData, results, timestamp);
 
   return results;
 }
 
 /**
- * Store individual heartbeat in KV
+ * Update all monitor data (summary and uptime) in a single write
  */
-async function storeHeartbeat(env, heartbeat) {
-  const heartbeatKey = `heartbeats:${heartbeat.serviceId}`;
-  
-  try {
-    // Get existing heartbeats
-    const existingHeartbeatsJson = await env.HEARTBEAT_LOGS.get(heartbeatKey);
-    let heartbeats = existingHeartbeatsJson ? JSON.parse(existingHeartbeatsJson) : [];
-
-    // Add new heartbeat
-    heartbeats.unshift(heartbeat);
-
-    // Keep only the most recent entries
-    const maxEntries = 100;
-    if (heartbeats.length > maxEntries) {
-      heartbeats = heartbeats.slice(0, maxEntries);
-    }
-
-    // Store back to KV
-    await env.HEARTBEAT_LOGS.put(heartbeatKey, JSON.stringify(heartbeats));
-  } catch (error) {
-    console.error(`Error storing heartbeat for ${heartbeat.serviceId}:`, error);
-  }
-}
-
-/**
- * Store heartbeat log in KV
- */
-async function storeHeartbeatLog(env, serviceId, result) {
-  const logKey = `logs:${serviceId}`;
-  
-  try {
-    // Get existing logs
-    const existingLogsJson = await env.HEARTBEAT_LOGS.get(logKey);
-    let logs = existingLogsJson ? JSON.parse(existingLogsJson) : [];
-
-    // Add new log entry
-    logs.unshift(result);
-
-    // Keep only the most recent entries (configurable via MAX_LOG_ENTRIES)
-    const maxEntries = parseInt(env.MAX_LOG_ENTRIES) || 100;
-    if (logs.length > maxEntries) {
-      logs = logs.slice(0, maxEntries);
-    }
-
-    // Store back to KV
-    await env.HEARTBEAT_LOGS.put(logKey, JSON.stringify(logs));
-  } catch (error) {
-    console.error(`Error storing log for ${serviceId}:`, error);
-  }
-}
-
-/**
- * Store summary of all checks
- */
-async function storeSummary(env, results, timestamp) {
-  const summary = {
-    timestamp: timestamp,
-    totalServices: results.length,
-    servicesUp: results.filter(r => r.status === 'up').length,
-    servicesDegraded: results.filter(r => r.status === 'degraded').length,
-    servicesDown: results.filter(r => r.status === 'down').length,
-    servicesUnknown: results.filter(r => r.status === 'unknown').length,
-    results: results
-  };
-
-  try {
-    // Store latest summary
-    await env.HEARTBEAT_LOGS.put('summary:latest', JSON.stringify(summary));
-
-    // Store in history
-    const summaryKey = `summary:history`;
-    const existingHistoryJson = await env.HEARTBEAT_LOGS.get(summaryKey);
-    let history = existingHistoryJson ? JSON.parse(existingHistoryJson) : [];
-
-    history.unshift(summary);
-
-    // Keep last 1000 summaries
-    if (history.length > 1000) {
-      history = history.slice(0, 1000);
-    }
-
-    await env.HEARTBEAT_LOGS.put(summaryKey, JSON.stringify(history));
-  } catch (error) {
-    console.error('Error storing summary:', error);
-  }
-}
-
-/**
- * Store daily uptime statistics
- */
-async function storeDailyUptime(env, results, timestamp) {
+async function updateMonitorData(env, monitorData, results, timestamp) {
   const today = new Date(timestamp).toISOString().split('T')[0]; // YYYY-MM-DD format
 
-  for (const result of results) {
-    const uptimeKey = `uptime:${result.serviceId}:${today}`;
+  try {
+    // Initialize structure if needed
+    if (!monitorData.uptime) monitorData.uptime = {};
     
-    try {
-      // Get existing data for today
-      const existingDataJson = await env.HEARTBEAT_LOGS.get(uptimeKey);
-      let dailyData = existingDataJson ? JSON.parse(existingDataJson) : {
-        date: today,
-        serviceId: result.serviceId,
-        serviceName: result.serviceName,
-        totalChecks: 0,
-        upChecks: 0,
-        downChecks: 0,
-        degradedChecks: 0,
-        unknownChecks: 0,
-        uptimePercentage: 0
-      };
+    // Update summary
+    monitorData.summary = {
+      timestamp: timestamp,
+      totalServices: results.length,
+      servicesUp: results.filter(r => r.status === 'up').length,
+      servicesDegraded: results.filter(r => r.status === 'degraded').length,
+      servicesDown: results.filter(r => r.status === 'down').length,
+      servicesUnknown: results.filter(r => r.status === 'unknown').length,
+      results: results
+    };
+
+    // Update uptime data for each service
+    for (const result of results) {
+      // Initialize service data if not exists
+      if (!monitorData.uptime[result.serviceId]) {
+        monitorData.uptime[result.serviceId] = {
+          serviceId: result.serviceId,
+          serviceName: result.serviceName,
+          days: {}
+        };
+      }
+
+      const serviceData = monitorData.uptime[result.serviceId];
+
+      // Get or create today's data
+      if (!serviceData.days[today]) {
+        serviceData.days[today] = {
+          date: today,
+          totalChecks: 0,
+          upChecks: 0,
+          downChecks: 0,
+          degradedChecks: 0,
+          unknownChecks: 0,
+          uptimePercentage: 0
+        };
+      }
+
+      const dailyData = serviceData.days[today];
 
       // Increment counters
       dailyData.totalChecks++;
@@ -300,43 +238,24 @@ async function storeDailyUptime(env, results, timestamp) {
       // Calculate uptime percentage (exclude unknown from calculation)
       const knownChecks = dailyData.totalChecks - dailyData.unknownChecks;
       if (knownChecks > 0) {
-        dailyData.uptimePercentage = ((dailyData.upChecks + dailyData.degradedChecks * 0.5) / knownChecks * 100).toFixed(2);
+        dailyData.uptimePercentage = parseFloat(((dailyData.upChecks + dailyData.degradedChecks * 0.5) / knownChecks * 100).toFixed(2));
       }
 
       dailyData.lastUpdate = timestamp;
 
-      // Store updated data
-      await env.HEARTBEAT_LOGS.put(uptimeKey, JSON.stringify(dailyData));
-
-      // Also update the service's uptime history index
-      await updateUptimeHistory(env, result.serviceId, today);
-    } catch (error) {
-      console.error(`Error storing daily uptime for ${result.serviceId}:`, error);
-    }
-  }
-}
-
-/**
- * Update uptime history index for a service
- */
-async function updateUptimeHistory(env, serviceId, date) {
-  try {
-    const historyKey = `uptime:${serviceId}:index`;
-    const historyJson = await env.HEARTBEAT_LOGS.get(historyKey);
-    let dates = historyJson ? JSON.parse(historyJson) : [];
-
-    // Add date if not already present
-    if (!dates.includes(date)) {
-      dates.push(date);
-      // Keep only last 90 days
-      dates.sort();
+      // Keep only last 90 days for this service
+      const dates = Object.keys(serviceData.days).sort();
       if (dates.length > 90) {
-        dates = dates.slice(-90);
+        // Remove oldest days
+        const daysToRemove = dates.slice(0, dates.length - 90);
+        daysToRemove.forEach(date => delete serviceData.days[date]);
       }
-      await env.HEARTBEAT_LOGS.put(historyKey, JSON.stringify(dates));
     }
+
+    // Store everything in a single write operation
+    await env.HEARTBEAT_LOGS.put('monitor:data', JSON.stringify(monitorData));
   } catch (error) {
-    console.error(`Error updating uptime history for ${serviceId}:`, error);
+    console.error('Error updating monitor data:', error);
   }
 }
 
@@ -999,33 +918,12 @@ async function handleDashboard(env) {
 }
 
 /**
- * Handle get logs API
- */
-async function handleGetLogs(env, url) {
-  const serviceId = url.searchParams.get('serviceId');
-  
-  if (!serviceId) {
-    return new Response(JSON.stringify({ error: 'serviceId parameter required' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-
-  const logKey = `logs:${serviceId}`;
-  const logsJson = await env.HEARTBEAT_LOGS.get(logKey);
-  const logs = logsJson ? JSON.parse(logsJson) : [];
-
-  return new Response(JSON.stringify(logs, null, 2), {
-    headers: { 'Content-Type': 'application/json' }
-  });
-}
-
-/**
  * Handle get status API
  */
 async function handleGetStatus(env) {
-  const summaryJson = await env.HEARTBEAT_LOGS.get('summary:latest');
-  const summary = summaryJson ? JSON.parse(summaryJson) : null;
+  const monitorDataJson = await env.HEARTBEAT_LOGS.get('monitor:data');
+  const monitorData = monitorDataJson ? JSON.parse(monitorDataJson) : { summary: null };
+  const summary = monitorData.summary || null;
 
   return new Response(JSON.stringify({ summary }, null, 2), {
     headers: { 'Content-Type': 'application/json' }
@@ -1046,57 +944,50 @@ async function handleGetUptime(env, url) {
   }
 
   try {
-    // Get the list of dates for this service
-    const historyKey = `uptime:${serviceId}:index`;
-    const historyJson = await env.HEARTBEAT_LOGS.get(historyKey);
-    const dates = historyJson ? JSON.parse(historyJson) : [];
-
-    // Fetch uptime data for all dates
-    const uptimeData = [];
-    for (const date of dates) {
-      const uptimeKey = `uptime:${serviceId}:${date}`;
-      const dataJson = await env.HEARTBEAT_LOGS.get(uptimeKey);
-      if (dataJson) {
-        uptimeData.push(JSON.parse(dataJson));
-      }
-    }
+    // Get all monitor data in a single read
+    const monitorDataJson = await env.HEARTBEAT_LOGS.get('monitor:data');
+    const monitorData = monitorDataJson ? JSON.parse(monitorDataJson) : { uptime: {} };
+    const allUptimeData = monitorData.uptime || {};
+    const serviceData = allUptimeData[serviceId] || { days: {} };
 
     // Fill in missing days with null data up to 90 days
     const today = new Date();
     const last90Days = [];
+    let totalChecksAll = 0;
+    let upChecksAll = 0;
+    let degradedChecksAll = 0;
+    let unknownChecksAll = 0;
+
     for (let i = 89; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const dateStr = date.toISOString().split('T')[0];
       
-      const existingData = uptimeData.find(d => d.date === dateStr);
-      if (existingData) {
-        last90Days.push(existingData);
+      const dayData = serviceData.days[dateStr];
+      if (dayData) {
+        last90Days.push(dayData);
+        totalChecksAll += dayData.totalChecks;
+        upChecksAll += dayData.upChecks;
+        degradedChecksAll += dayData.degradedChecks;
+        unknownChecksAll += dayData.unknownChecks;
       } else {
         last90Days.push({
           date: dateStr,
-          serviceId: serviceId,
           totalChecks: 0,
           upChecks: 0,
           downChecks: 0,
           degradedChecks: 0,
           unknownChecks: 0,
-          uptimePercentage: null,
-          status: 'no-data'
+          uptimePercentage: null
         });
       }
     }
 
     // Calculate overall uptime percentage for the period
-    const totalChecksAll = uptimeData.reduce((sum, d) => sum + d.totalChecks, 0);
-    const upChecksAll = uptimeData.reduce((sum, d) => sum + d.upChecks, 0);
-    const degradedChecksAll = uptimeData.reduce((sum, d) => sum + d.degradedChecks, 0);
-    const unknownChecksAll = uptimeData.reduce((sum, d) => sum + d.unknownChecks, 0);
     const knownChecksAll = totalChecksAll - unknownChecksAll;
-    
     let overallUptime = 0;
     if (knownChecksAll > 0) {
-      overallUptime = ((upChecksAll + degradedChecksAll * 0.5) / knownChecksAll * 100).toFixed(2);
+      overallUptime = parseFloat(((upChecksAll + degradedChecksAll * 0.5) / knownChecksAll * 100).toFixed(2));
     }
 
     return new Response(JSON.stringify({
