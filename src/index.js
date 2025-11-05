@@ -315,7 +315,7 @@ async function handleDashboard(env) {
             :root {
                 --bg-primary: #111827;
                 --bg-secondary: #1f2937;
-                --bg-hover: #374151;
+                --bg-hover: #036358;
                 --text-primary: #f9fafb;
                 --text-secondary: #d1d5db;
                 --text-tertiary: #9ca3af;
@@ -717,11 +717,16 @@ async function handleDashboard(env) {
         }
 
         function generateUptimeBar(uptimeData) {
-            if (!uptimeData || !uptimeData.days) {
-                // Fallback to empty bars if no data
+            if (!uptimeData || !uptimeData.days || uptimeData.days.length === 0) {
+                // Fallback: generate 90 days with dates but no data
+                const today = new Date();
                 let html = '';
-                for (let i = 0; i < 90; i++) {
-                    html += \`<div class="uptime-day unknown" title="No data"></div>\`;
+                for (let i = 89; i >= 0; i--) {
+                    const date = new Date(today);
+                    date.setDate(date.getDate() - i);
+                    const dateStr = date.toISOString().split('T')[0];
+                    const tooltipText = \`\${formatDate(dateStr)}\\nNo data available\`;
+                    html += \`<div class="uptime-day unknown" title="\${tooltipText}"></div>\`;
                 }
                 return html;
             }
@@ -729,7 +734,7 @@ async function handleDashboard(env) {
             let html = '';
             uptimeData.days.forEach(day => {
                 let dayStatus = 'unknown';
-                let tooltipText = \`\${formatDate(day.date)}: No data\`;
+                let tooltipText = \`\${formatDate(day.date)}\\nNo data available\`;
                 
                 if (day.totalChecks > 0) {
                     const uptimePercent = parseFloat(day.uptimePercentage);
