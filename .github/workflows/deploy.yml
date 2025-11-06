@@ -107,8 +107,14 @@ jobs:
           
           # API Keys for heartbeat authentication
           if [[ -n "${{ secrets.API_KEYS }}" ]]; then
-            # Use printf to avoid echo adding newlines, and proper quoting
-            printf '%s' "${{ secrets.API_KEYS }}" | npx wrangler secret put API_KEYS
+            # Decode from base64 if it's base64 encoded, otherwise use as-is
+            if echo "${{ secrets.API_KEYS }}" | base64 -d &>/dev/null; then
+              echo "Detected base64-encoded API_KEYS"
+              echo "${{ secrets.API_KEYS }}" | base64 -d | npx wrangler secret put API_KEYS
+            else
+              # Use printf to avoid echo adding newlines, and proper quoting
+              printf '%s' "${{ secrets.API_KEYS }}" | npx wrangler secret put API_KEYS
+            fi
             echo "✅ API_KEYS configured"
           else
             echo "⚠️  API_KEYS not set - heartbeat authentication may not work"
