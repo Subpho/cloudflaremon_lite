@@ -538,16 +538,48 @@ Your internal services only need:
 
 ### KV Storage Structure
 
-- `heartbeats:{serviceId}`: Array of recent heartbeats from each service (up to 100)
-- `latest:{serviceId}`: Timestamp of the most recent heartbeat from each service
-- `logs:{serviceId}`: Array of staleness check results for each service
-- `summary:latest`: Latest summary of all service statuses
-- `summary:history`: Historical summaries (up to 1000 entries)
+**Single Consolidated Entry:**
+- `monitor:data`: Single JSON entry containing:
+  - `latest`: Latest heartbeat timestamps for all services
+  - `uptime`: Daily uptime statistics for all services
+  - `summary`: Current status summary for all services
+
+This ultra-efficient design uses only **1 KV entry** for all monitoring data, drastically reducing KV operations and storage costs.
 
 ### Data Retention
 
-- Service logs: Last `MAX_LOG_ENTRIES` (default: 100) per service
-- Summary history: Last 1000 summaries
+**Configurable Retention Period** (default: 90 days):
+
+Set in `ui.json`:
+```json
+{
+  "features": {
+    "uptimeRetentionDays": 90
+  }
+}
+```
+
+**Automatic Housekeeping:**
+- Uptime history older than `uptimeRetentionDays` is automatically removed
+- Runs on every status check (every 5 minutes by default)
+- No manual cleanup required
+
+**Common Retention Periods:**
+- **30 days**: Minimal storage, short-term monitoring (recommended for testing)
+- **90 days**: Default, good balance (recommended for most use cases)
+- **180 days**: Extended monitoring (6 months of history)
+- **365 days**: Full year tracking (higher KV storage usage)
+
+**Storage Impact:**
+- 30 days: ~5KB per service
+- 90 days: ~15KB per service  
+- 180 days: ~30KB per service
+- 365 days: ~60KB per service
+
+The retention period also controls:
+- Number of days shown in uptime visualization bars
+- "X days ago" label on the dashboard
+- "Tracked days: X/Y" metadata display
 
 ## Troubleshooting
 

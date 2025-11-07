@@ -99,8 +99,11 @@
     "showUptimePercentage": true,
     "_showUptimePercentage_comment": "Currently always shown, reserved for future toggle",
     
-    "show90DayHistory": true,
-    "_show90DayHistory_comment": "Currently always shown, reserved for future toggle"
+    "showUptimeHistory": true,
+    "_showUptimeHistory_comment": "Show uptime history visualization bars",
+    
+    "uptimeRetentionDays": 90,
+    "_uptimeRetentionDays_comment": "Number of days to retain uptime history data in KV storage. This affects both storage and the uptime visualization bars. Common values: 30, 60, 90, 180, 365. Higher values use more KV storage."
   },
   
   "uptimeThresholds": {

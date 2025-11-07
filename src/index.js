@@ -321,11 +321,12 @@ async function updateMonitorData(env, monitorData, results, timestamp) {
 
       dailyData.lastUpdate = timestamp;
 
-      // Keep only last 90 days for this service
+      // Keep only last N days for this service (configurable retention period)
+      const retentionDays = uiConfig.features.uptimeRetentionDays || 90;
       const dates = Object.keys(serviceData.days).sort();
-      if (dates.length > 90) {
+      if (dates.length > retentionDays) {
         // Remove oldest days
-        const daysToRemove = dates.slice(0, dates.length - 90);
+        const daysToRemove = dates.slice(0, dates.length - retentionDays);
         daysToRemove.forEach(date => delete serviceData.days[date]);
       }
     }
@@ -1292,10 +1293,11 @@ async function handleDashboard(env) {
 
         function generateUptimeBar(uptimeData) {
             if (!uptimeData || !uptimeData.days || uptimeData.days.length === 0) {
-                // Fallback: generate 90 days with dates but no data
+                // Fallback: generate days based on retention period with no data
+                const retentionDays = ${uiConfig.features.uptimeRetentionDays};
                 const today = new Date();
                 let html = '';
-                for (let i = 89; i >= 0; i--) {
+                for (let i = retentionDays - 1; i >= 0; i--) {
                     const date = new Date(today);
                     date.setDate(date.getDate() - i);
                     const dateStr = date.toISOString().split('T')[0];
@@ -1519,7 +1521,7 @@ async function handleDashboard(env) {
                                     </div>
                                 </div>
                                 <div class="uptime-labels">
-                                    <span>90 days ago</span>
+                                    <span>\${uptimeData?.retentionDays || ${uiConfig.features.uptimeRetentionDays}} days ago</span>
                                     <span>Today</span>
                                 </div>
                             </div>
@@ -1535,7 +1537,7 @@ async function handleDashboard(env) {
                                 \${uptimeData && uptimeData.totalDays > 0 ? \`
                                 <div class="meta-item">
                                     <span class="meta-label">Tracked days:</span>
-                                    <span>\${uptimeData.totalDays}/90</span>
+                                    <span>\${uptimeData.totalDays}/\${uptimeData.retentionDays || ${uiConfig.features.uptimeRetentionDays}}</span>
                                 </div>
                                 \` : ''}
                             </div>
@@ -1661,28 +1663,29 @@ async function handleGetUptime(env, url) {
     const allUptimeData = monitorData.uptime || {};
     const serviceData = allUptimeData[serviceId] || { days: {} };
 
-    // Fill in missing days with null data up to 90 days
+    // Fill in missing days with null data up to retention period
+    const retentionDays = uiConfig.features.uptimeRetentionDays || 90;
     const today = new Date();
-    const last90Days = [];
+    const historicalDays = [];
     let totalChecksAll = 0;
     let upChecksAll = 0;
     let degradedChecksAll = 0;
     let unknownChecksAll = 0;
 
-    for (let i = 89; i >= 0; i--) {
+    for (let i = retentionDays - 1; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const dateStr = date.toISOString().split('T')[0];
       
       const dayData = serviceData.days[dateStr];
       if (dayData) {
-        last90Days.push(dayData);
+        historicalDays.push(dayData);
         totalChecksAll += dayData.totalChecks;
         upChecksAll += dayData.upChecks;
         degradedChecksAll += dayData.degradedChecks;
         unknownChecksAll += dayData.unknownChecks;
       } else {
-        last90Days.push({
+        historicalDays.push({
           date: dateStr,
           totalChecks: 0,
           upChecks: 0,
@@ -1703,9 +1706,10 @@ async function handleGetUptime(env, url) {
 
     return new Response(JSON.stringify({
       serviceId: serviceId,
-      days: last90Days,
+      days: historicalDays,
       overallUptime: overallUptime,
-      totalDays: last90Days.filter(d => d.totalChecks > 0).length
+      totalDays: historicalDays.filter(d => d.totalChecks > 0).length,
+      retentionDays: retentionDays
     }, null, 2), {
       headers: { 'Content-Type': 'application/json' }
     });
