@@ -110,7 +110,7 @@
       },
       {
         "name": "fair",
-        "min": 99.0,
+        "min": 80.0,
         "color": "#f59e0b",
         "label": "Fair"
       },
