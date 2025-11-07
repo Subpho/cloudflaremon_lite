@@ -374,9 +374,9 @@ curl -X POST https://your-worker.workers.dev/api/alert \
 - `source` (optional): Alert source identifier (default: "external")
 - `labels` (optional): Additional key-value metadata
 - `annotations` (optional): Additional annotations
-- `channels` (optional): Array of specific channels to route to (e.g., `["discord", "slack"]`)
+- `channels` or `channel` (optional): Array or string of specific channels to route to (e.g., `["discord", "slack"]` or `"slack"`)
 
-**Channel Routing:** By default, alerts are routed to all enabled channels based on severity. Specify `channels` to override:
+**Channel Routing:** By default, alerts are routed to all enabled channels based on severity. Specify `channels` or `channel` to override:
 
 ```json
 {
@@ -386,6 +386,8 @@ curl -X POST https://your-worker.workers.dev/api/alert \
   "channels": ["pagerduty", "discord"]
 }
 ```
+
+**Channel Validation:** The endpoint validates requested channels and returns detailed errors if channels are not found, disabled, or don't accept external alerts. The error response includes a list of available enabled channels.
 
 **📖 See [External Alert Integration Guide](docs/EXTERNAL_ALERTS.md) for detailed integration examples with Alertmanager, Grafana, and custom scripts.**
 

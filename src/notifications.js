@@ -535,10 +535,29 @@ export async function sendCustomAlert(env, alertData) {
 
   // Get enabled channels for external alerts
   let enabledChannels;
+  let channelValidationErrors = [];
   
   // If specific channels are requested in the payload, use only those
   if (alertData.channels && alertData.channels.length > 0) {
     const requestedChannels = alertData.channels.map(c => c.toLowerCase());
+    
+    // Validate each requested channel
+    for (const requestedChannel of alertData.channels) {
+      const channelLower = requestedChannel.toLowerCase();
+      const found = notificationsConfig.channels.find(ch => 
+        ch.type.toLowerCase() === channelLower || ch.name.toLowerCase() === channelLower
+      );
+      
+      if (!found) {
+        channelValidationErrors.push(`Channel '${requestedChannel}' not found in configuration`);
+      } else if (!found.enabled) {
+        channelValidationErrors.push(`Channel '${requestedChannel}' is disabled`);
+      } else if (found.config && found.config.externalAlerts === false) {
+        channelValidationErrors.push(`Channel '${requestedChannel}' does not accept external alerts`);
+      }
+    }
+    
+    // Filter for enabled channels
     enabledChannels = notificationsConfig.channels.filter(ch => {
       if (!ch.enabled) return false;
       
@@ -564,13 +583,31 @@ export async function sendCustomAlert(env, alertData) {
     });
   }
 
+  // Return validation errors if any
+  if (channelValidationErrors.length > 0) {
+    console.warn('Channel validation errors:', channelValidationErrors);
+    return {
+      success: false,
+      errors: channelValidationErrors,
+      availableChannels: notificationsConfig.channels
+        .filter(ch => ch.enabled)
+        .map(ch => ({ type: ch.type, name: ch.name }))
+    };
+  }
+  
   if (enabledChannels.length === 0) {
-    if (alertData.channels && alertData.channels.length > 0) {
-      console.log(`No matching enabled channels found for requested: ${alertData.channels.join(', ')}`);
-    } else {
-      console.log(`No enabled channels for alert severity: ${alertData.severity}`);
-    }
-    return;
+    const message = alertData.channels && alertData.channels.length > 0
+      ? `No matching enabled channels found for requested: ${alertData.channels.join(', ')}`
+      : `No enabled channels for alert severity: ${alertData.severity}`;
+    
+    console.log(message);
+    return {
+      success: false,
+      errors: [message],
+      availableChannels: notificationsConfig.channels
+        .filter(ch => ch.enabled)
+        .map(ch => ({ type: ch.type, name: ch.name }))
+    };
   }
 
   console.log(`Sending custom alert "${alertData.title}" to ${enabledChannels.length} channel(s): ${enabledChannels.map(ch => ch.type).join(', ')}`);
@@ -585,6 +622,11 @@ export async function sendCustomAlert(env, alertData) {
   });
 
   await Promise.allSettled(promises);
+  
+  return {
+    success: true,
+    channelsSent: enabledChannels.map(ch => ch.type)
+  };
 }
 
 /**

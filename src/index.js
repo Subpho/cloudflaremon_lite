@@ -354,6 +354,14 @@ async function handleCustomAlert(env, request) {
     } else if (body.title && body.message) {
       // Generic format: has 'title' and 'message'
       // This is the catch-all format for custom integrations
+      
+      // Support both 'channel' (singular) and 'channels' (plural)
+      let channels = body.channels || body.channel || [];
+      // Ensure it's an array
+      if (!Array.isArray(channels)) {
+        channels = [channels];
+      }
+      
       alertData = {
         title: body.title,
         message: body.message,
@@ -361,7 +369,7 @@ async function handleCustomAlert(env, request) {
         source: body.source || 'external',
         labels: body.labels || {},
         annotations: body.annotations || {},
-        channels: body.channels || []  // Optional: specify target channels
+        channels: channels  // Optional: specify target channels
       };
     } else {
       return new Response(JSON.stringify({
@@ -375,12 +383,27 @@ async function handleCustomAlert(env, request) {
 
     // Send notifications using the custom alert handler
     const { sendCustomAlert } = await import('./notifications.js');
-    await sendCustomAlert(env, alertData);
+    const result = await sendCustomAlert(env, alertData);
+
+    // Handle validation errors
+    if (result && !result.success) {
+      return new Response(JSON.stringify({
+        success: false,
+        message: 'Alert validation failed',
+        errors: result.errors,
+        availableChannels: result.availableChannels,
+        alertTitle: alertData.title
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
 
     return new Response(JSON.stringify({
       success: true,
       message: 'Alert processed and notifications sent',
-      alertTitle: alertData.title
+      alertTitle: alertData.title,
+      channelsSent: result?.channelsSent || []
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
