@@ -1,4 +1,5 @@
 import servicesConfig from '../services.json';
+import uiConfig from '../ui.json';
 import { checkAndSendNotifications, testNotification } from './notifications.js';
 
 /**
@@ -492,23 +493,24 @@ async function handleDashboard(env) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Status Monitor</title>
+    <title>${uiConfig.branding.pageTitle}</title>
+    <link rel="icon" href="${uiConfig.branding.favicon}">
     <style>
         :root {
-            --bg-primary: #ffffff;
-            --bg-secondary: #f9fafb;
+            --bg-primary: ${uiConfig.theme.colors.light.primary};
+            --bg-secondary: ${uiConfig.theme.colors.light.secondary};
             --bg-hover: #f3f4f6;
-            --text-primary: #111827;
-            --text-secondary: #6b7280;
+            --text-primary: ${uiConfig.theme.colors.light.text};
+            --text-secondary: ${uiConfig.theme.colors.light.textSecondary};
             --text-tertiary: #9ca3af;
-            --border-color: #e5e7eb;
-            --status-up: #10b981;
+            --border-color: ${uiConfig.theme.colors.light.border};
+            --status-up: ${uiConfig.theme.colors.light.statusUp};
             --status-up-bg: #d1fae5;
             --status-up-text: #065f46;
-            --status-down: #ef4444;
+            --status-down: ${uiConfig.theme.colors.light.statusDown};
             --status-down-bg: #fee2e2;
             --status-down-text: #991b1b;
-            --status-degraded: #f59e0b;
+            --status-degraded: ${uiConfig.theme.colors.light.statusDegraded};
             --status-degraded-bg: #fed7aa;
             --status-degraded-text: #92400e;
             --status-unknown: #6b7280;
@@ -518,19 +520,43 @@ async function handleDashboard(env) {
             --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
+        [data-theme="dark"] {
+            --bg-primary: ${uiConfig.theme.colors.dark.primary};
+            --bg-secondary: ${uiConfig.theme.colors.dark.secondary};
+            --bg-hover: #036358;
+            --text-primary: ${uiConfig.theme.colors.dark.text};
+            --text-secondary: ${uiConfig.theme.colors.dark.textSecondary};
+            --text-tertiary: #9ca3af;
+            --border-color: ${uiConfig.theme.colors.dark.border};
+            --status-up: ${uiConfig.theme.colors.dark.statusUp};
+            --status-up-bg: #064e3b;
+            --status-up-text: #6ee7b7;
+            --status-down: ${uiConfig.theme.colors.dark.statusDown};
+            --status-down-bg: #7f1d1d;
+            --status-down-text: #fca5a5;
+            --status-degraded: ${uiConfig.theme.colors.dark.statusDegraded};
+            --status-degraded-bg: #78350f;
+            --status-degraded-text: #fcd34d;
+            --status-unknown-bg: #374151;
+            --status-unknown-text: #d1d5db;
+        }
+
         @media (prefers-color-scheme: dark) {
-            :root {
-                --bg-primary: #111827;
-                --bg-secondary: #1f2937;
+            :root:not([data-theme="light"]) {
+                --bg-primary: ${uiConfig.theme.colors.dark.primary};
+                --bg-secondary: ${uiConfig.theme.colors.dark.secondary};
                 --bg-hover: #036358;
-                --text-primary: #f9fafb;
-                --text-secondary: #d1d5db;
+                --text-primary: ${uiConfig.theme.colors.dark.text};
+                --text-secondary: ${uiConfig.theme.colors.dark.textSecondary};
                 --text-tertiary: #9ca3af;
-                --border-color: #374151;
+                --border-color: ${uiConfig.theme.colors.dark.border};
+                --status-up: ${uiConfig.theme.colors.dark.statusUp};
                 --status-up-bg: #064e3b;
                 --status-up-text: #6ee7b7;
+                --status-down: ${uiConfig.theme.colors.dark.statusDown};
                 --status-down-bg: #7f1d1d;
                 --status-down-text: #fca5a5;
+                --status-degraded: ${uiConfig.theme.colors.dark.statusDegraded};
                 --status-degraded-bg: #78350f;
                 --status-degraded-text: #fcd34d;
                 --status-unknown-bg: #374151;
@@ -561,6 +587,40 @@ async function handleDashboard(env) {
         header {
             margin-bottom: 48px;
             text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .logo {
+            max-width: 120px;
+            max-height: 80px;
+            margin-bottom: 16px;
+        }
+        
+        .header-links {
+            display: flex;
+            gap: 24px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 32px;
+        }
+        
+        .header-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: color 0.2s;
+            padding: 8px 16px;
+            border-radius: 6px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+        }
+        
+        .header-links a:hover {
+            color: var(--text-primary);
+            border-color: var(--text-tertiary);
         }
         
         h1 {
@@ -573,6 +633,7 @@ async function handleDashboard(env) {
         .subtitle {
             color: var(--text-secondary);
             font-size: 16px;
+            margin-bottom: 0;
         }
         
         .overall-status {
@@ -708,24 +769,68 @@ async function handleDashboard(env) {
         
         .service-uptime {
             font-size: 14px;
-            font-weight: 500;
+            font-weight: 600;
             color: var(--text-secondary);
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: all 0.2s;
         }
+        
+        ${uiConfig.uptimeThresholds.map(threshold => `
+        .service-uptime.uptime-${threshold.name} {
+            color: ${threshold.color};
+            background: ${threshold.color}15;
+            border: 1px solid ${threshold.color}40;
+        }`).join('\n')}
         
         .uptime-bar-container {
             margin-bottom: 12px;
+        }
+        
+        .uptime-bar-wrapper {
+            overflow-x: auto;
+            overflow-y: hidden;
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-color) var(--bg-secondary);
+        }
+        
+        .uptime-bar-wrapper::-webkit-scrollbar {
+            height: 6px;
+        }
+        
+        .uptime-bar-wrapper::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+            border-radius: 3px;
+        }
+        
+        .uptime-bar-wrapper::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 3px;
+        }
+        
+        .uptime-bar-wrapper::-webkit-scrollbar-thumb:hover {
+            background: var(--text-tertiary);
         }
         
         .uptime-bar {
             display: flex;
             gap: 2px;
             height: 40px;
-            margin-bottom: 8px;
+            min-width: 720px;
+        }
+        
+        @media (max-width: 768px) {
+            .uptime-bar {
+                min-width: 600px;
+            }
         }
         
         .uptime-day {
             flex: 1;
-            min-width: 3px;
+            min-width: 6px;
             background: var(--status-up);
             border-radius: 2px;
             transition: all 0.2s ease;
@@ -824,6 +929,33 @@ async function handleDashboard(env) {
             to { transform: rotate(360deg); }
         }
         
+        .theme-toggle-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+        }
+        
+        .theme-toggle {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 20px;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+        }
+        
+        .theme-toggle:hover {
+            background: var(--bg-hover);
+            transform: scale(1.05);
+        }
+        
         .refresh-btn {
             background: var(--bg-primary);
             color: var(--text-primary);
@@ -882,13 +1014,61 @@ async function handleDashboard(env) {
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
+        
+        footer {
+            margin-top: 80px;
+            padding-top: 32px;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+        }
+        
+        footer p {
+            color: var(--text-tertiary);
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+        
+        .footer-links {
+            display: flex;
+            gap: 24px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .footer-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.2s;
+        }
+        
+        .footer-links a:hover {
+            color: var(--text-primary);
+        }
+        
+        /* Custom CSS from config */
+        ${uiConfig.customCss}
     </style>
 </head>
 <body>
     <div class="container">
+        ${uiConfig.theme.showToggle ? `
+        <div class="theme-toggle-container">
+            <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+                <span id="themeIcon">🌙</span>
+            </button>
+        </div>
+        ` : ''}
         <header>
-            <h1>Service Status</h1>
-            <p class="subtitle">Real-time monitoring dashboard</p>
+            ${uiConfig.header.showLogo && uiConfig.header.logoUrl ? `<img src="${uiConfig.header.logoUrl}" alt="${uiConfig.header.logoAlt}" class="logo" />` : ''}
+            ${uiConfig.header.links && uiConfig.header.links.length > 0 ? `
+            <div class="header-links">
+                ${uiConfig.header.links.map(link => `<a href="${link.url}" target="${link.url.startsWith('http') ? '_blank' : '_self'}" rel="${link.url.startsWith('http') ? 'noopener noreferrer' : ''}">${link.text}</a>`).join('')}
+            </div>
+            ` : ''}
+            <h1>${uiConfig.header.title}</h1>
+            <p class="subtitle">${uiConfig.header.subtitle}</p>
+            ${uiConfig.customHtml.headerExtra}
         </header>
         
         <div class="overall-status" id="overallStatus">
@@ -922,6 +1102,59 @@ async function handleDashboard(env) {
     </div>
     
     <script>
+        // Theme management
+        const THEME_KEY = 'theme-preference';
+        const defaultTheme = '${uiConfig.theme.defaultMode}';
+        
+        function getSystemTheme() {
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        
+        function getTheme() {
+            const stored = localStorage.getItem(THEME_KEY);
+            if (stored && stored !== 'auto') return stored;
+            return defaultTheme === 'auto' ? getSystemTheme() : defaultTheme;
+        }
+        
+        function setTheme(theme) {
+            if (theme === 'auto') {
+                theme = getSystemTheme();
+            }
+            document.documentElement.setAttribute('data-theme', theme);
+            updateThemeIcon(theme);
+        }
+        
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('themeIcon');
+            if (icon) {
+                icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+            }
+        }
+        
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            const newTheme = current === 'dark' ? 'light' : 'dark';
+            localStorage.setItem(THEME_KEY, newTheme);
+            setTheme(newTheme);
+        }
+        
+        // Initialize theme
+        setTheme(getTheme());
+        
+        // Add toggle listener
+        const themeToggle = document.getElementById('themeToggle');
+        if (themeToggle) {
+            themeToggle.addEventListener('click', toggleTheme);
+        }
+        
+        // Listen for system theme changes
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+            const stored = localStorage.getItem(THEME_KEY);
+            if (stored === 'auto' || !stored) {
+                setTheme(e.matches ? 'dark' : 'light');
+            }
+        });
+        
         // Cache for uptime data
         const uptimeCache = {};
 
@@ -1162,16 +1395,31 @@ async function handleDashboard(env) {
                         const timeSince = service.lastSeen ? formatDuration(Date.now() - new Date(service.lastSeen).getTime()) : 'Never';
                         const uptime = uptimeData && uptimeData.overallUptime > 0 ? \`\${uptimeData.overallUptime}%\` : 'N/A';
                         
+                        // Calculate uptime threshold class
+                        let uptimeClass = '';
+                        if (uptimeData && uptimeData.overallUptime > 0) {
+                            const percentage = uptimeData.overallUptime;
+                            const thresholds = ${JSON.stringify(uiConfig.uptimeThresholds)};
+                            // Sort thresholds by min value descending and find the first match
+                            const sortedThresholds = [...thresholds].sort((a, b) => b.min - a.min);
+                            const matchedThreshold = sortedThresholds.find(t => percentage >= t.min);
+                            if (matchedThreshold) {
+                                uptimeClass = \`uptime-\${matchedThreshold.name}\`;
+                            }
+                        }
+                        
                         return \`
                         <div class="service-item">
                             <div class="service-main">
                                 <div class="service-status-icon \${service.status}">\${icon}</div>
                                 <div class="service-name">\${service.serviceName}</div>
-                                <div class="service-uptime">\${uptime}</div>
+                                <div class="service-uptime \${uptimeClass}">\${uptime}</div>
                             </div>
                             <div class="uptime-bar-container">
-                                <div class="uptime-bar">
-                                    \${generateUptimeBar(uptimeData)}
+                                <div class="uptime-bar-wrapper">
+                                    <div class="uptime-bar">
+                                        \${generateUptimeBar(uptimeData)}
+                                    </div>
                                 </div>
                                 <div class="uptime-labels">
                                     <span>90 days ago</span>
@@ -1237,9 +1485,19 @@ async function handleDashboard(env) {
         // Load status on page load
         loadStatus();
         
-        // Auto-refresh every 30 seconds
-        setInterval(loadStatus, 30000);
+        // Auto-refresh based on config
+        ${uiConfig.features.autoRefreshSeconds > 0 ? `setInterval(loadStatus, ${uiConfig.features.autoRefreshSeconds * 1000});` : ''}
     </script>
+    
+    <footer>
+        <p>${uiConfig.footer.text}</p>
+        ${uiConfig.footer.links && uiConfig.footer.links.length > 0 ? `
+        <div class="footer-links">
+            ${uiConfig.footer.links.map(link => `<a href="${link.url}" target="${link.url.startsWith('http') ? '_blank' : '_self'}" rel="${link.url.startsWith('http') ? 'noopener noreferrer' : ''}">${link.text}</a>`).join('')}
+        </div>
+        ` : ''}
+        ${uiConfig.customHtml.footerExtra}
+    </footer>
 </body>
 </html>
   `;
