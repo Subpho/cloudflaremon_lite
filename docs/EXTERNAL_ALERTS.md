@@ -66,20 +66,40 @@ Authorization: Bearer YOUR_ALERT_API_KEY  # Optional, required if ALERT_API_KEY 
 - If `ALERT_API_KEY` is not set, the endpoint is public (consider using Cloudflare Access or IP allowlisting)
 - See [Security Considerations](#security-considerations) for recommended approaches
 
-**Response:**
+**Success Response:**
 ```json
 {
   "success": true,
   "message": "Alert processed and notifications sent",
-  "alertTitle": "High Memory Usage"
+  "alertTitle": "High Memory Usage",
+  "channelsSent": ["discord", "slack"]
 }
 ```
 
-**Error Response:**
+**Error Responses:**
+
+Unsupported format:
 ```json
 {
   "success": false,
   "message": "Unsupported alert format"
+}
+```
+
+Channel validation errors:
+```json
+{
+  "success": false,
+  "message": "Alert validation failed",
+  "errors": [
+    "Channel 'email' is disabled",
+    "Channel 'teams' not found in configuration"
+  ],
+  "availableChannels": [
+    { "type": "discord", "name": "Discord Webhook" },
+    { "type": "slack", "name": "Slack Webhook" }
+  ],
+  "alertTitle": "Test Alert"
 }
 ```
 
@@ -209,7 +229,7 @@ A simple format for custom integrations.
 - `source` (string): Alert source identifier (default: "external")
 - `labels` (object): Key-value pairs with additional context
 - `annotations` (object): Additional metadata
-- `channels` (array): Specific notification channels to use (e.g., `["discord", "slack"]`)
+- `channels` or `channel` (array or string): Specific notification channels to use (e.g., `["discord", "slack"]` or `"discord"`)
 
 **Channel Routing:**
 
@@ -224,7 +244,28 @@ By default, alerts are routed to all enabled channels based on severity. You can
 }
 ```
 
-This will send the alert **only** to PagerDuty and Discord, regardless of the global configuration.
+Or use singular form:
+```json
+{
+  "title": "Quick Alert",
+  "message": "Single channel test",
+  "severity": "warning",
+  "channel": "slack"
+}
+```
+
+This will send the alert **only** to the specified channel(s), regardless of the global configuration.
+
+**Channel Validation:**
+
+The endpoint validates that:
+1. ✅ Requested channels exist in `notifications.json`
+2. ✅ Requested channels are enabled
+3. ✅ Requested channels accept external alerts
+
+If validation fails, you'll receive a detailed error response with:
+- List of validation errors
+- List of available enabled channels
 
 ## Integration Examples
 
@@ -726,6 +767,27 @@ If you receive "Unsupported alert format", ensure your payload matches one of th
 - For Alertmanager: Ensure `annotations.summary` and `annotations.description` are set in alert rules
 - For Grafana: Ensure alert rule has a title and message
 - For Generic: Include all optional fields for richer notifications
+
+### Channel Validation Errors
+
+**Error: "Channel 'X' is disabled"**
+- The requested channel exists but is not enabled in `notifications.json`
+- Set `enabled: true` for that channel
+
+**Error: "Channel 'X' not found in configuration"**
+- The channel doesn't exist in `notifications.json`
+- Check spelling (case-insensitive)
+- Available channel types: `discord`, `slack`, `telegram`, `email`, `webhook`, `pushover`, `pagerduty`
+- Check the `availableChannels` array in the error response
+
+**Error: "Channel 'X' does not accept external alerts"**
+- The channel has `externalAlerts: false` in its config
+- Remove that setting or set `externalAlerts: true`
+
+**Error: "No matching enabled channels"**
+- If you specified channels: None of them are enabled
+- If you didn't specify channels: No channels match the alert severity
+- Check the `availableChannels` array to see what's enabled
 
 ## Security Considerations
 
