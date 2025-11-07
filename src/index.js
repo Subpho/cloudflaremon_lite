@@ -233,7 +233,9 @@ async function checkHeartbeatStaleness(env) {
       lastSeen: lastSeen,
       timeSinceLastHeartbeat: timeSinceLastHeartbeat,
       stalenessThreshold: stalenessThreshold,
-      timestamp: timestamp
+      timestamp: timestamp,
+      groupId: service.groupId || null,
+      groupName: service.groupName || 'Ungrouped'
     };
 
     results.push(result);
