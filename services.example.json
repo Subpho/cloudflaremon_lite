@@ -1,9 +1,9 @@
 {
-  "services": [
+  "groups": [
     {
-      "id": "production-api",
-      "name": "Production API",
-      "enabled": true,
+      "id": "production",
+      "name": "Production Services",
+      "services": ["production-api", "production-database", "production-cache"],
       "stalenessThreshold": 300,
       "notifications": {
         "enabled": true,
@@ -12,75 +12,95 @@
       }
     },
     {
+      "id": "staging",
+      "name": "Staging Environment",
+      "services": ["staging-api", "staging-database"],
+      "stalenessThreshold": 600,
+      "notifications": {
+        "enabled": true,
+        "channels": ["slack", "telegram"],
+        "events": ["down"]
+      }
+    },
+    {
+      "id": "infrastructure",
+      "name": "Infrastructure",
+      "services": ["backup-service", "monitoring-agent"],
+      "stalenessThreshold": 600,
+      "notifications": {
+        "enabled": true,
+        "channels": ["email", "discord"],
+        "events": ["down", "up"]
+      }
+    },
+    {
+      "id": "development",
+      "name": "Development",
+      "services": ["dev-service", "test-service"],
+      "stalenessThreshold": 900,
+      "notifications": {
+        "enabled": false
+      }
+    }
+  ],
+  "services": [
+    {
+      "id": "production-api",
+      "name": "Production API",
+      "enabled": true
+    },
+    {
       "id": "production-database",
       "name": "Production Database",
       "enabled": true,
       "stalenessThreshold": 180,
       "notifications": {
-        "enabled": true,
         "channels": ["pagerduty", "discord"],
         "events": ["down", "up"]
       }
     },
     {
+      "id": "production-cache",
+      "name": "Production Cache",
+      "enabled": true
+    },
+    {
       "id": "staging-api",
       "name": "Staging API",
-      "enabled": true,
-      "stalenessThreshold": 600,
-      "notifications": {
-        "enabled": true,
-        "channels": ["slack"],
-        "events": ["down"]
-      }
+      "enabled": true
+    },
+    {
+      "id": "staging-database",
+      "name": "Staging Database",
+      "enabled": true
     },
     {
       "id": "dev-service",
       "name": "Development Service",
       "enabled": true,
-      "stalenessThreshold": 900,
       "notifications": {
         "enabled": true,
-        "channels": ["telegram"],
-        "events": ["down"]
-      }
-    },
-    {
-      "id": "backup-service",
-      "name": "Backup Service",
-      "enabled": true,
-      "stalenessThreshold": 3600,
-      "notifications": {
-        "enabled": true,
-        "channels": ["email"],
-        "events": ["down"]
-      }
-    },
-    {
-      "id": "monitoring-agent",
-      "name": "Monitoring Agent",
-      "enabled": true,
-      "stalenessThreshold": 300,
-      "notifications": {
-        "enabled": true,
-        "channels": ["discord", "webhook"],
-        "events": ["down", "up"]
-      }
-    },
-    {
-      "id": "internal-tool",
-      "name": "Internal Tool",
-      "enabled": true,
-      "stalenessThreshold": 600,
-      "notifications": {
-        "enabled": false
+        "channels": ["telegram"]
       }
     },
     {
       "id": "test-service",
       "name": "Test Service",
-      "enabled": false,
-      "stalenessThreshold": 300
+      "enabled": false
+    },
+    {
+      "id": "backup-service",
+      "name": "Backup Service",
+      "enabled": true,
+      "stalenessThreshold": 3600
+    },
+    {
+      "id": "monitoring-agent",
+      "name": "Monitoring Agent",
+      "enabled": true,
+      "notifications": {
+        "channels": ["discord", "webhook"]
+      }
     }
   ]
 }
-

@@ -7,6 +7,53 @@ import { checkAndSendNotifications, testNotification } from './notifications.js'
  * Receives heartbeats from internal network services and monitors for staleness
  */
 
+/**
+ * Build services map with group configurations merged
+ * Service-level settings override group-level settings
+ */
+function buildServicesWithGroups() {
+  const groups = servicesConfig.groups || [];
+  const services = servicesConfig.services || [];
+  
+  // Create a map of service ID to group
+  const serviceToGroup = new Map();
+  groups.forEach(group => {
+    group.services?.forEach(serviceId => {
+      serviceToGroup.set(serviceId, group);
+    });
+  });
+  
+  // Merge group config with service config
+  const mergedServices = services.map(service => {
+    const group = serviceToGroup.get(service.id);
+    
+    if (!group) {
+      // No group, return service as-is
+      return { ...service, groupId: null, groupName: 'Ungrouped' };
+    }
+    
+    // Deep merge: start with group defaults, override with service specifics
+    const merged = {
+      ...service,
+      groupId: group.id,
+      groupName: group.name,
+      stalenessThreshold: service.stalenessThreshold ?? group.stalenessThreshold,
+      notifications: {
+        enabled: service.notifications?.enabled ?? group.notifications?.enabled ?? false,
+        channels: service.notifications?.channels ?? group.notifications?.channels ?? [],
+        events: service.notifications?.events ?? group.notifications?.events ?? []
+      }
+    };
+    
+    return merged;
+  });
+  
+  return mergedServices;
+}
+
+// Build the merged services list
+const processedServices = buildServicesWithGroups();
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -23,7 +70,7 @@ export default {
       return handleGetUptime(env, url);
     } else if (url.pathname === '/api/services') {
       // List configured services
-      return new Response(JSON.stringify(servicesConfig.services, null, 2), {
+      return new Response(JSON.stringify(processedServices, null, 2), {
         headers: { 'Content-Type': 'application/json' }
       });
     } else if (url.pathname === '/api/test-notification' && request.method === 'POST') {
@@ -62,7 +109,7 @@ async function handleHeartbeat(request, env) {
     }
 
     // Find service in config
-    const service = servicesConfig.services.find(s => s.id === data.serviceId);
+    const service = processedServices.find(s => s.id === data.serviceId);
     if (!service) {
       return new Response(JSON.stringify({ error: 'Unknown serviceId' }), {
         status: 404,
@@ -151,7 +198,7 @@ async function checkHeartbeatStaleness(env) {
 
   const latestData = monitorData.latest || {};
 
-  for (const service of servicesConfig.services) {
+  for (const service of processedServices) {
     if (!service.enabled) {
       continue;
     }
@@ -196,7 +243,7 @@ async function checkHeartbeatStaleness(env) {
   await updateMonitorData(env, monitorData, results, timestamp);
 
   // Check for status changes and send notifications
-  await checkAndSendNotifications(env, results, monitorData, servicesConfig);
+  await checkAndSendNotifications(env, results, monitorData, { services: processedServices });
 
   return results;
 }
@@ -695,6 +742,11 @@ async function handleDashboard(env) {
             border-radius: 12px;
             border: 1px solid var(--border-color);
             overflow: hidden;
+            margin-bottom: 24px;
+        }
+        
+        .services-container:last-child {
+            margin-bottom: 0;
         }
         
         .services-header {
@@ -1080,15 +1132,10 @@ async function handleDashboard(env) {
 
         <div class="stats-grid" id="statsGrid" style="display: none;"></div>
         
-        <div class="services-container">
-            <div class="services-header">
-                <div class="services-title">Services</div>
-            </div>
-            <div id="services">
-                <div class="loading">
-                    <div class="loading-spinner"></div>
-                    <p>Loading services...</p>
-                </div>
+        <div id="servicesGroups">
+            <div class="loading">
+                <div class="loading-spinner"></div>
+                <p>Loading services...</p>
             </div>
         </div>
         
@@ -1377,7 +1424,7 @@ async function handleDashboard(env) {
                 \`;
                 
                 // Update services - fetch uptime data for each service
-                document.getElementById('services').innerHTML = '<div class="loading"><p>Loading uptime data...</p></div>';
+                document.getElementById('servicesGroups').innerHTML = '<div class="loading"><p>Loading uptime data...</p></div>';
                 
                 const servicesWithUptime = await Promise.all(summary.results.map(async (service) => {
                     try {
@@ -1389,7 +1436,19 @@ async function handleDashboard(env) {
                     }
                 }));
                 
-                const servicesHtml = servicesWithUptime.map(({ service, uptimeData }) => {
+                // Group services by groupName
+                const groupedServices = {};
+                servicesWithUptime.forEach(({ service, uptimeData }) => {
+                    const groupName = service.groupName || 'Ungrouped';
+                    if (!groupedServices[groupName]) {
+                        groupedServices[groupName] = [];
+                    }
+                    groupedServices[groupName].push({ service, uptimeData });
+                });
+                
+                // Generate HTML for each group
+                const groupsHtml = Object.entries(groupedServices).map(([groupName, services]) => {
+                    const servicesHtml = services.map(({ service, uptimeData }) => {
                     try {
                         const icon = service.status === 'up' ? '✓' : (service.status === 'down' ? '✕' : '●');
                         const timeSince = service.lastSeen ? formatDuration(Date.now() - new Date(service.lastSeen).getTime()) : 'Never';
@@ -1448,9 +1507,22 @@ async function handleDashboard(env) {
                         console.error('Error rendering service:', service.serviceName, error);
                         return \`<div class="service-item"><div class="service-name">Error loading \${service.serviceName}</div></div>\`;
                     }
+                    }).join('');
+                    
+                    // Return the group container with header and services
+                    return \`
+                        <div class="services-container">
+                            <div class="services-header">
+                                <div class="services-title">\${groupName}</div>
+                            </div>
+                            <div class="services-list">
+                                \${servicesHtml}
+                            </div>
+                        </div>
+                    \`;
                 }).join('');
                 
-                document.getElementById('services').innerHTML = servicesHtml;
+                document.getElementById('servicesGroups').innerHTML = groupsHtml;
                 document.getElementById('lastUpdate').textContent = \`Last updated: \${new Date(summary.timestamp).toLocaleString()}\`;
                 
             } catch (error) {

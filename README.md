@@ -11,6 +11,7 @@ A push-based Cloudflare Worker heartbeat monitoring solution for internal networ
 - 📤 **Push-Based Architecture**: Internal services send heartbeats to the worker (not vice versa)
 - 🔒 **Zero Exposure**: No need to expose internal services publicly
 - 📊 **Beautiful Dashboard**: Web-based UI to view service status in real-time with 90-day uptime history
+- 📁 **Service Groups**: Organize services into logical groups with inherited configurations
 - 💾 **Ultra-Efficient Storage**: Single KV entry for all monitoring data
 - ⚡ **Fast & Reliable**: Leverages Cloudflare's global network
 - 🔐 **API Key Authentication**: Secure heartbeat endpoints with unified JSON secret
@@ -116,20 +117,36 @@ Edit `ui.json` to customize the dashboard appearance:
 
 ### 5. Configure Your Services
 
-Edit `services.json` to add your services to monitor:
+Edit `services.json` to add your services to monitor. Services can be organized into groups for better organization:
 
 ```json
 {
-  "services": [
+  "groups": [
     {
-      "id": "my-service",
-      "name": "My API Service",
-      "enabled": true,
+      "id": "production",
+      "name": "Production Services",
+      "services": ["api-prod", "db-prod"],
       "stalenessThreshold": 300,
       "notifications": {
         "enabled": true,
-        "channels": ["discord", "slack"],
+        "channels": ["discord", "pagerduty"],
         "events": ["down", "up"]
+      }
+    }
+  ],
+  "services": [
+    {
+      "id": "api-prod",
+      "name": "Production API",
+      "enabled": true
+    },
+    {
+      "id": "db-prod",
+      "name": "Production Database",
+      "enabled": true,
+      "stalenessThreshold": 180,
+      "notifications": {
+        "channels": ["pagerduty"]
       }
     }
   ]
@@ -138,14 +155,27 @@ Edit `services.json` to add your services to monitor:
 
 **Configuration Options:**
 
+**Groups** (optional):
+- `id`: Unique identifier for the group
+- `name`: Display name for the group (shown in dashboard headers)
+- `services`: Array of service IDs that belong to this group
+- `stalenessThreshold`: Default threshold for all services in the group
+- `notifications`: Default notification settings for all services in the group
+
+**Services**:
 - `id`: Unique identifier for the service (used by heartbeat clients)
 - `name`: Display name for the service
 - `enabled`: Whether to monitor this service (true/false)
-- `stalenessThreshold`: Time in seconds before considering a service "down" if no heartbeat received (default: 300)
-- `notifications` (optional): Per-service notification settings
-  - `enabled`: Enable/disable notifications for this service (default: true)
-  - `channels`: Array of channel types to notify (e.g., `["discord", "slack"]`). If empty/omitted, uses all enabled channels
-  - `events`: Array of events to notify on (e.g., `["down", "up"]`). If empty/omitted, uses channel's configured events
+- `stalenessThreshold` (optional): Overrides group default. Time in seconds before considering a service "down" (default: 300)
+- `notifications` (optional): Overrides group defaults
+  - `enabled`: Enable/disable notifications for this service
+  - `channels`: Array of channel types to notify (e.g., `["discord", "slack"]`)
+  - `events`: Array of events to notify on (e.g., `["down", "up"]`)
+
+**Inheritance Rules:**
+- Services inherit `stalenessThreshold` and `notifications` from their group
+- Service-level settings override group-level settings
+- Services without a group use "Ungrouped" in the dashboard
 
 ### 6. 🔒 Configure API Keys (Recommended)
 
