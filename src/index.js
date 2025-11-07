@@ -497,20 +497,20 @@ async function handleDashboard(env) {
     <link rel="icon" href="${uiConfig.branding.favicon}">
     <style>
         :root {
-            --bg-primary: #ffffff;
-            --bg-secondary: #f9fafb;
+            --bg-primary: ${uiConfig.theme.colors.light.primary};
+            --bg-secondary: ${uiConfig.theme.colors.light.secondary};
             --bg-hover: #f3f4f6;
-            --text-primary: #111827;
-            --text-secondary: #6b7280;
+            --text-primary: ${uiConfig.theme.colors.light.text};
+            --text-secondary: ${uiConfig.theme.colors.light.textSecondary};
             --text-tertiary: #9ca3af;
-            --border-color: #e5e7eb;
-            --status-up: #10b981;
+            --border-color: ${uiConfig.theme.colors.light.border};
+            --status-up: ${uiConfig.theme.colors.light.statusUp};
             --status-up-bg: #d1fae5;
             --status-up-text: #065f46;
-            --status-down: #ef4444;
+            --status-down: ${uiConfig.theme.colors.light.statusDown};
             --status-down-bg: #fee2e2;
             --status-down-text: #991b1b;
-            --status-degraded: #f59e0b;
+            --status-degraded: ${uiConfig.theme.colors.light.statusDegraded};
             --status-degraded-bg: #fed7aa;
             --status-degraded-text: #92400e;
             --status-unknown: #6b7280;
@@ -520,19 +520,43 @@ async function handleDashboard(env) {
             --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
+        [data-theme="dark"] {
+            --bg-primary: ${uiConfig.theme.colors.dark.primary};
+            --bg-secondary: ${uiConfig.theme.colors.dark.secondary};
+            --bg-hover: #036358;
+            --text-primary: ${uiConfig.theme.colors.dark.text};
+            --text-secondary: ${uiConfig.theme.colors.dark.textSecondary};
+            --text-tertiary: #9ca3af;
+            --border-color: ${uiConfig.theme.colors.dark.border};
+            --status-up: ${uiConfig.theme.colors.dark.statusUp};
+            --status-up-bg: #064e3b;
+            --status-up-text: #6ee7b7;
+            --status-down: ${uiConfig.theme.colors.dark.statusDown};
+            --status-down-bg: #7f1d1d;
+            --status-down-text: #fca5a5;
+            --status-degraded: ${uiConfig.theme.colors.dark.statusDegraded};
+            --status-degraded-bg: #78350f;
+            --status-degraded-text: #fcd34d;
+            --status-unknown-bg: #374151;
+            --status-unknown-text: #d1d5db;
+        }
+
         @media (prefers-color-scheme: dark) {
-            :root {
-                --bg-primary: #111827;
-                --bg-secondary: #1f2937;
+            :root:not([data-theme="light"]) {
+                --bg-primary: ${uiConfig.theme.colors.dark.primary};
+                --bg-secondary: ${uiConfig.theme.colors.dark.secondary};
                 --bg-hover: #036358;
-                --text-primary: #f9fafb;
-                --text-secondary: #d1d5db;
+                --text-primary: ${uiConfig.theme.colors.dark.text};
+                --text-secondary: ${uiConfig.theme.colors.dark.textSecondary};
                 --text-tertiary: #9ca3af;
-                --border-color: #374151;
+                --border-color: ${uiConfig.theme.colors.dark.border};
+                --status-up: ${uiConfig.theme.colors.dark.statusUp};
                 --status-up-bg: #064e3b;
                 --status-up-text: #6ee7b7;
+                --status-down: ${uiConfig.theme.colors.dark.statusDown};
                 --status-down-bg: #7f1d1d;
                 --status-down-text: #fca5a5;
+                --status-degraded: ${uiConfig.theme.colors.dark.statusDegraded};
                 --status-degraded-bg: #78350f;
                 --status-degraded-text: #fcd34d;
                 --status-unknown-bg: #374151;
@@ -861,6 +885,33 @@ async function handleDashboard(env) {
             to { transform: rotate(360deg); }
         }
         
+        .theme-toggle-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+        }
+        
+        .theme-toggle {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 20px;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+        }
+        
+        .theme-toggle:hover {
+            background: var(--bg-hover);
+            transform: scale(1.05);
+        }
+        
         .refresh-btn {
             background: var(--bg-primary);
             color: var(--text-primary);
@@ -957,6 +1008,13 @@ async function handleDashboard(env) {
 </head>
 <body>
     <div class="container">
+        ${uiConfig.theme.showToggle ? `
+        <div class="theme-toggle-container">
+            <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+                <span id="themeIcon">🌙</span>
+            </button>
+        </div>
+        ` : ''}
         <header>
             ${uiConfig.header.showLogo && uiConfig.header.logoUrl ? `<img src="${uiConfig.header.logoUrl}" alt="${uiConfig.header.logoAlt}" class="logo" />` : ''}
             ${uiConfig.header.links && uiConfig.header.links.length > 0 ? `
@@ -1000,6 +1058,59 @@ async function handleDashboard(env) {
     </div>
     
     <script>
+        // Theme management
+        const THEME_KEY = 'theme-preference';
+        const defaultTheme = '${uiConfig.theme.defaultMode}';
+        
+        function getSystemTheme() {
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        
+        function getTheme() {
+            const stored = localStorage.getItem(THEME_KEY);
+            if (stored && stored !== 'auto') return stored;
+            return defaultTheme === 'auto' ? getSystemTheme() : defaultTheme;
+        }
+        
+        function setTheme(theme) {
+            if (theme === 'auto') {
+                theme = getSystemTheme();
+            }
+            document.documentElement.setAttribute('data-theme', theme);
+            updateThemeIcon(theme);
+        }
+        
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('themeIcon');
+            if (icon) {
+                icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+            }
+        }
+        
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            const newTheme = current === 'dark' ? 'light' : 'dark';
+            localStorage.setItem(THEME_KEY, newTheme);
+            setTheme(newTheme);
+        }
+        
+        // Initialize theme
+        setTheme(getTheme());
+        
+        // Add toggle listener
+        const themeToggle = document.getElementById('themeToggle');
+        if (themeToggle) {
+            themeToggle.addEventListener('click', toggleTheme);
+        }
+        
+        // Listen for system theme changes
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+            const stored = localStorage.getItem(THEME_KEY);
+            if (stored === 'auto' || !stored) {
+                setTheme(e.matches ? 'dark' : 'light');
+            }
+        });
+        
         // Cache for uptime data
         const uptimeCache = {};
 

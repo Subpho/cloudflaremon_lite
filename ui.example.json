@@ -37,6 +37,38 @@
     "_accentColor_comment": "Currently not used in CSS, reserved for future features"
   },
   
+  "theme": {
+    "defaultMode": "auto",
+    "_defaultMode_comment": "Default theme: 'light', 'dark', or 'auto' (follows system preference)",
+    
+    "showToggle": true,
+    "_showToggle_comment": "Show theme toggle button in top-right corner",
+    
+    "colors": {
+      "light": {
+        "primary": "#ffffff",
+        "secondary": "#f9fafb",
+        "text": "#111827",
+        "textSecondary": "#6b7280",
+        "border": "#e5e7eb",
+        "statusUp": "#10b981",
+        "statusDown": "#ef4444",
+        "statusDegraded": "#f59e0b"
+      },
+      "dark": {
+        "primary": "#111827",
+        "secondary": "#1f2937",
+        "text": "#f9fafb",
+        "textSecondary": "#d1d5db",
+        "border": "#374151",
+        "statusUp": "#10b981",
+        "statusDown": "#ef4444",
+        "statusDegraded": "#f59e0b"
+      }
+    },
+    "_colors_comment": "Customize colors for light and dark modes. Use hex color codes."
+  },
+  
   "footer": {
     "text": "Powered by Cloudflare Workers",
     "_text_comment": "Main footer text",

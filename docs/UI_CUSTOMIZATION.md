@@ -132,6 +132,117 @@ Add navigation links at the top of the header (above title):
 - Links are styled as buttons with hover effects
 - Responsive: wraps on smaller screens
 
+## Theme & Colors
+
+### Theme Toggle
+
+Add a toggle button to switch between light and dark mode:
+
+```json
+{
+  "theme": {
+    "defaultMode": "auto",
+    "showToggle": true
+  }
+}
+```
+
+**Default Mode Options:**
+- `"auto"` - Follows system preference (default)
+- `"light"` - Always starts in light mode
+- `"dark"` - Always starts in dark mode
+
+**Features:**
+- 🌙 Moon icon for light mode, ☀️ sun icon for dark mode
+- Button appears in top-right corner
+- User preference saved in localStorage
+- Respects system theme changes when set to "auto"
+- Smooth transitions between themes
+
+### Custom Colors
+
+Customize colors for both light and dark modes:
+
+```json
+{
+  "theme": {
+    "colors": {
+      "light": {
+        "primary": "#ffffff",
+        "secondary": "#f9fafb",
+        "text": "#111827",
+        "textSecondary": "#6b7280",
+        "border": "#e5e7eb",
+        "statusUp": "#10b981",
+        "statusDown": "#ef4444",
+        "statusDegraded": "#f59e0b"
+      },
+      "dark": {
+        "primary": "#111827",
+        "secondary": "#1f2937",
+        "text": "#f9fafb",
+        "textSecondary": "#d1d5db",
+        "border": "#374151",
+        "statusUp": "#10b981",
+        "statusDown": "#ef4444",
+        "statusDegraded": "#f59e0b"
+      }
+    }
+  }
+}
+```
+
+**Color Properties:**
+- `primary` - Main background color
+- `secondary` - Secondary background (cards, sections)
+- `text` - Primary text color
+- `textSecondary` - Secondary text color (labels, metadata)
+- `border` - Border color for cards and dividers
+- `statusUp` - Color for healthy/up services
+- `statusDown` - Color for down/error services
+- `statusDegraded` - Color for degraded/warning services
+
+**Example: Blue Theme**
+```json
+{
+  "theme": {
+    "colors": {
+      "light": {
+        "primary": "#f0f9ff",
+        "secondary": "#e0f2fe",
+        "text": "#075985",
+        "textSecondary": "#0284c7",
+        "border": "#bae6fd",
+        "statusUp": "#10b981",
+        "statusDown": "#ef4444",
+        "statusDegraded": "#f59e0b"
+      }
+    }
+  }
+}
+```
+
+**Example: High Contrast Dark**
+```json
+{
+  "theme": {
+    "defaultMode": "dark",
+    "colors": {
+      "dark": {
+        "primary": "#000000",
+        "secondary": "#1a1a1a",
+        "text": "#ffffff",
+        "textSecondary": "#cccccc",
+        "border": "#333333",
+        "statusUp": "#00ff00",
+        "statusDown": "#ff0000",
+        "statusDegraded": "#ffaa00"
+      }
+    }
+  }
+}
+```
+
 ## Branding
 
 ### Page Title and Favicon
