@@ -2124,7 +2124,7 @@ async function handleDashboard(env) {
                 const groupName = service?.groupName || 'Ungrouped';
                 
                 // If no data or no historical days, create empty rows for the date range
-                if (!data || !data.historicalDays || data.historicalDays.length === 0) {
+                if (!data || !data.days || data.days.length === 0) {
                     // Generate empty rows for each day in the range
                     const currentDate = new Date(startDate);
                     while (currentDate <= endDate) {
@@ -2146,7 +2146,7 @@ async function handleDashboard(env) {
                     return;
                 }
                 
-                data.historicalDays.forEach(day => {
+                data.days.forEach(day => {
                     const dayDate = new Date(day.date);
                     if (dayDate >= startDate && dayDate <= endDate) {
                         const totalChecks = day.totalChecks || 0;
