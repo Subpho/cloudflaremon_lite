@@ -1207,7 +1207,7 @@ async function handleDashboard(env) {
             gap: 8px;
         }
         
-        .theme-toggle, .export-btn {
+        .theme-toggle, .export-btn, .auto-refresh-btn {
             background: var(--bg-primary);
             color: var(--text-primary);
             border: 1px solid var(--border-color);
@@ -1221,11 +1221,89 @@ async function handleDashboard(env) {
             justify-content: center;
             width: 44px;
             height: 44px;
+            position: relative;
         }
         
-        .theme-toggle:hover, .export-btn:hover {
+        .theme-toggle:hover, .export-btn:hover, .auto-refresh-btn:hover {
             background: var(--bg-hover);
             transform: scale(1.05);
+        }
+        
+        .auto-refresh-btn.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #163d92;
+        }
+        
+        .auto-refresh-btn.active:hover {
+            background:#163d92;
+        }
+        
+        .auto-refresh-timer {
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            background: #10b981;
+            color: white;
+            font-size: 9px;
+            font-weight: 600;
+            padding: 2px 4px;
+            border-radius: 4px;
+            min-width: 18px;
+            text-align: center;
+        }
+        
+        /* Auto-refresh dropdown menu */
+        .auto-refresh-menu {
+            display: none;
+            position: absolute;
+            top: 52px;
+            right: 0;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 8px;
+            min-width: 180px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            animation: slideDown 0.2s ease-out;
+        }
+        
+        .auto-refresh-menu.show {
+            display: block;
+        }
+        
+        .auto-refresh-menu-item {
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: background 0.2s;
+        }
+        
+        .auto-refresh-menu-item:hover {
+            background: var(--bg-hover);
+        }
+        
+        .auto-refresh-menu-item.active {
+            background: #3b82f620;
+            color: #3b82f6;
+            font-weight: 500;
+        }
+        
+        .auto-refresh-menu-item.active::after {
+            content: '✓';
+            margin-left: 8px;
+        }
+        
+        .auto-refresh-menu-divider {
+            height: 1px;
+            background: var(--border-color);
+            margin: 8px 0;
         }
         
         .refresh-btn {
@@ -1569,6 +1647,31 @@ async function handleDashboard(env) {
             <button class="export-btn" id="exportBtn" aria-label="Export data" title="Export CSV">
                 <span>📊</span>
             </button>
+            <button class="auto-refresh-btn" id="autoRefreshBtn" aria-label="Toggle auto-refresh" title="Auto-refresh">
+                <span id="autoRefreshIcon">🔄</span>
+                <span class="auto-refresh-timer" id="autoRefreshTimer" style="display: none;"></span>
+            </button>
+            <div class="auto-refresh-menu" id="autoRefreshMenu">
+                <div class="auto-refresh-menu-item" data-seconds="0">
+                    <span>Off</span>
+                </div>
+                <div class="auto-refresh-menu-divider"></div>
+                <div class="auto-refresh-menu-item" data-seconds="10">
+                    <span>10 seconds</span>
+                </div>
+                <div class="auto-refresh-menu-item" data-seconds="30">
+                    <span>30 seconds</span>
+                </div>
+                <div class="auto-refresh-menu-item" data-seconds="60">
+                    <span>1 minute</span>
+                </div>
+                <div class="auto-refresh-menu-item" data-seconds="300">
+                    <span>5 minutes</span>
+                </div>
+                <div class="auto-refresh-menu-item" data-seconds="600">
+                    <span>10 minutes</span>
+                </div>
+            </div>
             ${uiConfig.theme.showToggle ? `
             <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
                 <span id="themeIcon">🌙</span>
@@ -2109,8 +2212,115 @@ async function handleDashboard(env) {
         // Load status on page load
         loadStatus();
         
-        // Auto-refresh based on config
-        ${uiConfig.features.autoRefreshSeconds > 0 ? `setInterval(loadStatus, ${uiConfig.features.autoRefreshSeconds * 1000});` : ''}
+        // Auto-refresh functionality
+        const AUTO_REFRESH_KEY = 'auto-refresh-interval';
+        const DEFAULT_REFRESH_SECONDS = ${uiConfig.features.autoRefreshSeconds || 0};
+        let autoRefreshInterval = null;
+        let autoRefreshCountdown = null;
+        let autoRefreshSecondsLeft = 0;
+        
+        function getAutoRefreshInterval() {
+            const stored = localStorage.getItem(AUTO_REFRESH_KEY);
+            return stored !== null ? parseInt(stored) : DEFAULT_REFRESH_SECONDS;
+        }
+        
+        function setAutoRefreshInterval(seconds) {
+            localStorage.setItem(AUTO_REFRESH_KEY, seconds.toString());
+            startAutoRefresh(seconds);
+            updateAutoRefreshUI(seconds);
+        }
+        
+        function startAutoRefresh(seconds) {
+            // Clear existing intervals
+            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+            if (autoRefreshCountdown) clearInterval(autoRefreshCountdown);
+            
+            const btn = document.getElementById('autoRefreshBtn');
+            const timer = document.getElementById('autoRefreshTimer');
+            
+            if (seconds > 0) {
+                // Enable auto-refresh
+                btn.classList.add('active');
+                timer.style.display = 'block';
+                autoRefreshSecondsLeft = seconds;
+                
+                // Update countdown every second
+                autoRefreshCountdown = setInterval(() => {
+                    autoRefreshSecondsLeft--;
+                    timer.textContent = autoRefreshSecondsLeft;
+                    
+                    if (autoRefreshSecondsLeft <= 0) {
+                        autoRefreshSecondsLeft = seconds;
+                    }
+                }, 1000);
+                
+                // Refresh data at interval
+                autoRefreshInterval = setInterval(() => {
+                    loadStatus();
+                    autoRefreshSecondsLeft = seconds;
+                }, seconds * 1000);
+                
+                timer.textContent = seconds;
+            } else {
+                // Disable auto-refresh
+                btn.classList.remove('active');
+                timer.style.display = 'none';
+                autoRefreshSecondsLeft = 0;
+            }
+        }
+        
+        function updateAutoRefreshUI(currentSeconds) {
+            const menuItems = document.querySelectorAll('.auto-refresh-menu-item');
+            menuItems.forEach(item => {
+                const seconds = parseInt(item.getAttribute('data-seconds'));
+                if (seconds === currentSeconds) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+        }
+        
+        // Initialize auto-refresh
+        const initialRefreshInterval = getAutoRefreshInterval();
+        startAutoRefresh(initialRefreshInterval);
+        updateAutoRefreshUI(initialRefreshInterval);
+        
+        // Toggle auto-refresh menu
+        const autoRefreshBtn = document.getElementById('autoRefreshBtn');
+        const autoRefreshMenu = document.getElementById('autoRefreshMenu');
+        let autoRefreshMenuOpen = false;
+        
+        if (autoRefreshBtn) {
+            autoRefreshBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                autoRefreshMenuOpen = !autoRefreshMenuOpen;
+                if (autoRefreshMenuOpen) {
+                    autoRefreshMenu.classList.add('show');
+                } else {
+                    autoRefreshMenu.classList.remove('show');
+                }
+            });
+        }
+        
+        // Handle menu item clicks
+        document.querySelectorAll('.auto-refresh-menu-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const seconds = parseInt(item.getAttribute('data-seconds'));
+                setAutoRefreshInterval(seconds);
+                autoRefreshMenu.classList.remove('show');
+                autoRefreshMenuOpen = false;
+            });
+        });
+        
+        // Close menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (autoRefreshMenuOpen && !autoRefreshMenu.contains(e.target) && !autoRefreshBtn.contains(e.target)) {
+                autoRefreshMenu.classList.remove('show');
+                autoRefreshMenuOpen = false;
+            }
+        });
         
         // Export functionality
         let exportServices = [];
