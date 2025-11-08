@@ -189,6 +189,9 @@ async function handleHeartbeat(request, env) {
 
 /**
  * Check for stale heartbeats and update service status
+ * This function runs on every cron schedule and checks ALL enabled services,
+ * regardless of their current status (up, down, degraded, or unknown).
+ * This ensures continuous monitoring and accurate uptime statistics.
  */
 async function checkHeartbeatStaleness(env) {
   const results = [];
@@ -204,7 +207,15 @@ async function checkHeartbeatStaleness(env) {
   };
 
   const latestData = monitorData.latest || {};
+  
+  // Track statistics for logging
+  let checkedCount = 0;
+  let upCount = 0;
+  let downCount = 0;
+  let unknownCount = 0;
 
+  // Check ALL enabled services (including those currently down)
+  // This ensures we continue recording downtime in statistics
   for (const service of processedServices) {
     if (!service.enabled) {
       continue;
@@ -221,6 +232,7 @@ async function checkHeartbeatStaleness(env) {
       status = 'unknown';
       lastSeen = null;
       timeSinceLastHeartbeat = null;
+      unknownCount++;
     } else {
       const lastHeartbeatDate = new Date(lastHeartbeatTime);
       timeSinceLastHeartbeat = now - lastHeartbeatDate.getTime();
@@ -228,8 +240,10 @@ async function checkHeartbeatStaleness(env) {
       
       if (timeSinceLastHeartbeat > stalenessThreshold) {
         status = 'down';
+        downCount++;
       } else {
         status = 'up';
+        upCount++;
       }
     }
 
@@ -247,9 +261,14 @@ async function checkHeartbeatStaleness(env) {
     };
 
     results.push(result);
+    checkedCount++;
   }
 
+  // Log check summary (helpful for debugging and confirming continuous monitoring)
+  console.log(`Staleness check completed: ${checkedCount} services checked (Up: ${upCount}, Down: ${downCount}, Unknown: ${unknownCount})`);
+
   // Update summary and uptime in the single store
+  // This records the current check for ALL services, including down ones
   await updateMonitorData(env, monitorData, results, timestamp);
 
   // Check for status changes and send notifications
@@ -260,6 +279,9 @@ async function checkHeartbeatStaleness(env) {
 
 /**
  * Update all monitor data (summary and uptime) in a single write
+ * This function processes ALL service check results and increments counters
+ * for up/down/degraded/unknown checks, ensuring accurate statistics even
+ * for services that remain down over multiple check cycles.
  */
 async function updateMonitorData(env, monitorData, results, timestamp) {
   const today = new Date(timestamp).toISOString().split('T')[0]; // YYYY-MM-DD format
@@ -279,7 +301,8 @@ async function updateMonitorData(env, monitorData, results, timestamp) {
       results: results
     };
 
-    // Update uptime data for each service
+    // Update uptime data for each service (including down services)
+    // Every check is recorded to maintain accurate uptime percentages
     for (const result of results) {
       // Initialize service data if not exists
       if (!monitorData.uptime[result.serviceId]) {
@@ -307,12 +330,15 @@ async function updateMonitorData(env, monitorData, results, timestamp) {
 
       const dailyData = serviceData.days[today];
 
-      // Increment counters
+      // Increment counters for ALL check results
+      // This includes recording down checks for services that remain offline
       dailyData.totalChecks++;
       if (result.status === 'up') {
         dailyData.upChecks++;
       } else if (result.status === 'down') {
         dailyData.downChecks++;
+        // Log down service checks for visibility (helpful for debugging)
+        console.log(`Recording down check for service: ${result.serviceName} (${result.serviceId}) - Down checks today: ${dailyData.downChecks}`);
       } else if (result.status === 'degraded') {
         dailyData.degradedChecks++;
       } else {
