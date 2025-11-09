@@ -97,6 +97,9 @@ export default {
     } else if (url.pathname === '/api/alert' && request.method === 'POST') {
       // Receive external alerts (Alertmanager, Grafana, etc.)
       return handleCustomAlert(env, request);
+    } else if (url.pathname === '/api/alerts/recent') {
+      // Get recent alerts for dashboard notifications
+      return handleGetRecentAlerts(env, url);
     }
 
     return new Response('Not Found', { status: 404 });
@@ -557,6 +560,93 @@ async function handleTestNotification(env, request) {
 }
 
 /**
+ * Handle get recent alerts API
+ */
+async function handleGetRecentAlerts(env, url) {
+  try {
+    const since = url.searchParams.get('since'); // Optional: get alerts since timestamp
+    const limit = parseInt(url.searchParams.get('limit') || '20');
+    
+    // Get alerts from KV
+    const alertsJson = await env.HEARTBEAT_LOGS.get('recent:alerts');
+    let alerts = alertsJson ? JSON.parse(alertsJson) : [];
+    
+    // Filter by 'since' timestamp if provided
+    if (since) {
+      alerts = alerts.filter(alert => alert.timestamp > since);
+    }
+    
+    // Limit results
+    alerts = alerts.slice(0, limit);
+    
+    return new Response(JSON.stringify({
+      success: true,
+      alerts: alerts,
+      count: alerts.length
+    }, null, 2), {
+      headers: { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching recent alerts:', error);
+    return new Response(JSON.stringify({ 
+      success: false,
+      error: error.message,
+      alerts: [],
+      count: 0
+    }), {
+      status: 500,
+      headers: { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
+  }
+}
+
+/**
+ * Store recent alert for dashboard notifications
+ */
+async function storeRecentAlert(env, alertData) {
+  const timestamp = new Date().toISOString();
+  const alertId = `alert:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
+  
+  // Create alert record
+  const alert = {
+    id: alertId,
+    title: alertData.title,
+    message: alertData.message,
+    severity: alertData.severity || 'warning',
+    source: alertData.source || 'external',
+    timestamp: timestamp,
+    read: false
+  };
+  
+  // Get existing alerts
+  const alertsJson = await env.HEARTBEAT_LOGS.get('recent:alerts');
+  const alerts = alertsJson ? JSON.parse(alertsJson) : [];
+  
+  // Add new alert at the beginning
+  alerts.unshift(alert);
+  
+  // Keep only last 50 alerts
+  const maxAlerts = 50;
+  if (alerts.length > maxAlerts) {
+    alerts.splice(maxAlerts);
+  }
+  
+  // Store back
+  await env.HEARTBEAT_LOGS.put('recent:alerts', JSON.stringify(alerts));
+  
+  console.log(`Stored alert for dashboard: ${alertData.title}`);
+}
+
+/**
  * Handle custom alert from external tools (Alertmanager, Grafana, etc.)
  */
 async function handleCustomAlert(env, request) {
@@ -636,6 +726,14 @@ async function handleCustomAlert(env, request) {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       });
+    }
+
+    // Store alert for dashboard notifications
+    try {
+      await storeRecentAlert(env, alertData);
+    } catch (error) {
+      console.error('Error storing alert for dashboard:', error);
+      // Don't fail the request if storage fails
     }
 
     return new Response(JSON.stringify({
@@ -1636,11 +1734,134 @@ async function handleDashboard(env) {
             color: var(--text-primary);
         }
         
+        /* Alert Toast Notifications */
+        .alert-toast-container {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 10001;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-width: 400px;
+        }
+        
+        .alert-toast {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            animation: slideInRight 0.3s ease-out;
+            position: relative;
+            display: flex;
+            gap: 12px;
+        }
+        
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .alert-toast.closing {
+            animation: slideOutRight 0.3s ease-out forwards;
+        }
+        
+        @keyframes slideOutRight {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+        
+        .alert-toast-icon {
+            font-size: 24px;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+        
+        .alert-toast-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .alert-toast-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+        }
+        
+        .alert-toast-message {
+            font-size: 13px;
+            color: var(--text-secondary);
+            word-wrap: break-word;
+        }
+        
+        .alert-toast-time {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            margin-top: 4px;
+        }
+        
+        .alert-toast-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: none;
+            border: none;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        
+        .alert-toast-close:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        
+        .alert-toast.severity-critical {
+            border-left: 4px solid #ef4444;
+        }
+        
+        .alert-toast.severity-warning {
+            border-left: 4px solid #f59e0b;
+        }
+        
+        .alert-toast.severity-info {
+            border-left: 4px solid #3b82f6;
+        }
+        
+        @media (max-width: 768px) {
+            .alert-toast-container {
+                left: 20px;
+                right: 20px;
+                max-width: none;
+            }
+        }
+        
         /* Custom CSS from config */
         ${uiConfig.customCss}
     </style>
 </head>
 <body>
+    <!-- Alert Toast Container -->
+    <div class="alert-toast-container" id="alertToastContainer"></div>
+    
     <div class="container">
         ${uiConfig.theme.showToggle || uiConfig.features.showExportButton !== false ? `
         <div class="theme-toggle-container">
@@ -2321,6 +2542,115 @@ async function handleDashboard(env) {
                 autoRefreshMenuOpen = false;
             }
         });
+        
+        // Alert Notifications
+        const ALERT_CHECK_INTERVAL = 10000; // Check every 10 seconds
+        const LAST_ALERT_TIMESTAMP_KEY = 'last-alert-timestamp';
+        let alertCheckInterval = null;
+        
+        function getLastAlertTimestamp() {
+            return localStorage.getItem(LAST_ALERT_TIMESTAMP_KEY) || new Date(0).toISOString();
+        }
+        
+        function setLastAlertTimestamp(timestamp) {
+            localStorage.setItem(LAST_ALERT_TIMESTAMP_KEY, timestamp);
+        }
+        
+        function getSeverityIcon(severity) {
+            const icons = {
+                'critical': '🚨',
+                'error': '❌',
+                'warning': '⚠️',
+                'info': 'ℹ️',
+                'success': '✅'
+            };
+            return icons[severity?.toLowerCase()] || '🔔';
+        }
+        
+        function showToastNotification(alert) {
+            const container = document.getElementById('alertToastContainer');
+            if (!container) return;
+            
+            const toast = document.createElement('div');
+            toast.className = \`alert-toast severity-\${alert.severity}\`;
+            toast.innerHTML = \`
+                <div class="alert-toast-icon">\${getSeverityIcon(alert.severity)}</div>
+                <div class="alert-toast-content">
+                    <div class="alert-toast-title">\${alert.title}</div>
+                    <div class="alert-toast-message">\${alert.message}</div>
+                    <div class="alert-toast-time">\${new Date(alert.timestamp).toLocaleString()}</div>
+                </div>
+                <button class="alert-toast-close" onclick="closeToast(this.parentElement)">×</button>
+            \`;
+            
+            container.appendChild(toast);
+            
+            // Auto-dismiss after 10 seconds
+            setTimeout(() => {
+                closeToast(toast);
+            }, 10000);
+        }
+        
+        window.closeToast = function(toast) {
+            toast.classList.add('closing');
+            setTimeout(() => {
+                toast.remove();
+            }, 300);
+        };
+        
+        function showBrowserNotification(alert) {
+            // Check if browser supports notifications
+            if (!('Notification' in window)) {
+                return;
+            }
+            
+            // Check if permission is granted
+            if (Notification.permission === 'granted') {
+                new Notification(alert.title, {
+                    body: alert.message,
+                    icon: getSeverityIcon(alert.severity),
+                    tag: alert.id,
+                    timestamp: new Date(alert.timestamp).getTime()
+                });
+            } else if (Notification.permission !== 'denied') {
+                // Request permission
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        new Notification(alert.title, {
+                            body: alert.message,
+                            icon: getSeverityIcon(alert.severity),
+                            tag: alert.id
+                        });
+                    }
+                });
+            }
+        }
+        
+        async function checkForNewAlerts() {
+            try {
+                const since = getLastAlertTimestamp();
+                const response = await fetch(\`/api/alerts/recent?since=\${encodeURIComponent(since)}&limit=10\`);
+                const data = await response.json();
+                
+                if (data.success && data.alerts && data.alerts.length > 0) {
+                    // Show notifications for new alerts
+                    data.alerts.forEach(alert => {
+                        showToastNotification(alert);
+                        showBrowserNotification(alert);
+                    });
+                    
+                    // Update last seen timestamp to the most recent alert
+                    const latestTimestamp = data.alerts[0].timestamp;
+                    setLastAlertTimestamp(latestTimestamp);
+                }
+            } catch (error) {
+                console.error('Error checking for alerts:', error);
+            }
+        }
+        
+        // Start checking for alerts
+        checkForNewAlerts();
+        alertCheckInterval = setInterval(checkForNewAlerts, ALERT_CHECK_INTERVAL);
         
         // Export functionality
         let exportServices = [];
