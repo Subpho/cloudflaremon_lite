@@ -612,6 +612,33 @@ async function handleGetRecentAlerts(env, url) {
 /**
  * Store recent alert for dashboard notifications
  */
+/**
+ * Clean up old alerts based on configuration
+ */
+function cleanupAlerts(alerts, config = {}) {
+  // Default settings
+  const maxAlerts = config.maxAlerts || 100;
+  const maxAgeDays = config.maxAgeDays || 7;
+  const now = Date.now();
+  const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+  
+  let cleaned = alerts;
+  
+  // Remove alerts older than maxAgeDays
+  cleaned = cleaned.filter(alert => {
+    const alertTime = new Date(alert.timestamp).getTime();
+    const age = now - alertTime;
+    return age < maxAgeMs;
+  });
+  
+  // Keep only last maxAlerts
+  if (cleaned.length > maxAlerts) {
+    cleaned = cleaned.slice(0, maxAlerts);
+  }
+  
+  return cleaned;
+}
+
 async function storeRecentAlert(env, alertData) {
   const timestamp = new Date().toISOString();
   const alertId = `alert:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
@@ -629,21 +656,24 @@ async function storeRecentAlert(env, alertData) {
   
   // Get existing alerts
   const alertsJson = await env.HEARTBEAT_LOGS.get('recent:alerts');
-  const alerts = alertsJson ? JSON.parse(alertsJson) : [];
+  let alerts = alertsJson ? JSON.parse(alertsJson) : [];
   
   // Add new alert at the beginning
   alerts.unshift(alert);
   
-  // Keep only last 50 alerts
-  const maxAlerts = 50;
-  if (alerts.length > maxAlerts) {
-    alerts.splice(maxAlerts);
+  // Load notification config for alert history settings
+  const notificationsConfig = (await import('../notifications.json')).default;
+  const historyConfig = notificationsConfig?.settings?.alertHistory || {};
+  
+  // Clean up old/excess alerts if enabled
+  if (historyConfig.cleanupOnAdd !== false) {
+    alerts = cleanupAlerts(alerts, historyConfig);
   }
   
   // Store back
   await env.HEARTBEAT_LOGS.put('recent:alerts', JSON.stringify(alerts));
   
-  console.log(`Stored alert for dashboard: ${alertData.title}`);
+  console.log(`Stored alert for dashboard: ${alertData.title} (total: ${alerts.length})`);
 }
 
 /**

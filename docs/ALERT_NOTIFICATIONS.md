@@ -1,6 +1,8 @@
 # Alert Notifications Feature
 
-Real-time notification system that shows toast notifications in the dashboard when external alerts are received via `/api/alert`.
+Real-time notification system that shows toast notifications in the dashboard for:
+- **External alerts** received via `/api/alert` (Grafana, Alertmanager, custom)
+- **Service status changes** from heartbeat monitoring (down/up/degraded)
 
 ## 🎉 Features
 
@@ -10,13 +12,18 @@ Real-time notification system that shows toast notifications in the dashboard wh
 - **⏰ Auto-dismiss** - Toast notifications auto-close after 10 seconds
 - **🔄 Real-time Polling** - Checks for new alerts every 10 seconds
 - **💾 Persistent State** - Remembers last seen alert (no duplicates)
+- **🔧 Unified Alerts** - Both external and internal service alerts in one feed
 
 ---
 
 ## 📊 How It Works
 
-### 1. **Alert Received**
-When someone calls `/api/alert`:
+### Alert Sources
+
+The system collects alerts from **two sources**:
+
+#### 1. **External Alerts** (via `/api/alert`)
+When external monitoring tools call `/api/alert`:
 ```bash
 curl -X POST https://mon.pipdor.com/api/alert \
   -H "Content-Type: application/json" \
@@ -27,17 +34,45 @@ curl -X POST https://mon.pipdor.com/api/alert \
   }'
 ```
 
-### 2. **Alert Stored**
+**Supported formats:**
+- Custom JSON alerts
+- Grafana webhooks
+- Alertmanager webhooks
+- Any system that can POST JSON
+
+#### 2. **Service Status Changes** (from heartbeat monitoring)
+When services change status (automatically detected by cron checks):
+
+- **Service goes down** → `🚨 Critical` alert
+  - "Service Down: [Service Name]"
+  - "[Service Name] is not responding. Last seen: [timestamp]"
+  
+- **Service recovers** → `ℹ️ Info` alert
+  - "Service Recovered: [Service Name]"
+  - "[Service Name] has recovered and is now operational."
+  
+- **Service degraded** → `⚠️ Warning` alert
+  - "Service Degraded: [Service Name]"
+  - "[Service Name] is experiencing degraded performance."
+
+**Respects notification settings:**
+- Uses cooldown period from `notifications.json`
+- Honors per-service notification preferences
+- Same alert visible in both external channels (Discord, Slack) and dashboard
+
+### Alert Storage & Delivery
+
+**1. Alert Stored**
 - Alert is stored in KV (`recent:alerts`)
 - Kept for up to 50 most recent alerts
-- Includes timestamp, title, message, severity
+- Includes timestamp, title, message, severity, source
 
-### 3. **Dashboard Polls**
+**2. Dashboard Polls**
 - Dashboard checks `/api/alerts/recent` every 10 seconds
 - Only fetches alerts since last seen timestamp
 - Prevents showing duplicates
 
-### 4. **Notification Shown**
+**3. Notification Shown**
 - **Toast notification** slides in from right
 - **Browser notification** shown (if permitted)
 - Auto-dismisses after 10 seconds
@@ -140,6 +175,60 @@ curl -X POST https://mon.pipdor.com/api/alert \
     }]
   }'
 ```
+
+### Example 5: Service Status Change Alerts (Automatic)
+
+**Service status change alerts are generated automatically** when heartbeat monitoring detects changes:
+
+#### Service Goes Down
+When a service stops sending heartbeats:
+
+**Alert shown:**
+```
+🚨 Service Down: Internal API
+
+Internal API is not responding. Last seen: 11/8/2025, 3:45:12 PM
+```
+
+**JSON structure:**
+```json
+{
+  "id": "alert:1731085512000:abc123",
+  "title": "Service Down: Internal API",
+  "message": "Internal API is not responding. Last seen: 11/8/2025, 3:45:12 PM",
+  "severity": "critical",
+  "source": "heartbeat-monitor",
+  "timestamp": "2025-11-08T15:45:12.000Z",
+  "serviceId": "service-1",
+  "status": "down"
+}
+```
+
+#### Service Recovers
+When a service resumes sending heartbeats:
+
+**Alert shown:**
+```
+ℹ️ Service Recovered: Internal API
+
+Internal API has recovered and is now operational.
+```
+
+#### Service Degraded
+When a service reports degraded status:
+
+**Alert shown:**
+```
+⚠️ Service Degraded: Internal API
+
+Internal API is experiencing degraded performance.
+```
+
+**Configuration:**
+- Service status alerts respect `notifications.json` settings
+- Cooldown period applies (default: 5 minutes)
+- Per-service notification preferences honored
+- Appears in both dashboard and external channels (Discord, Slack)
 
 ---
 
@@ -252,15 +341,33 @@ setTimeout(() => {
 }, 10000); // milliseconds
 ```
 
-### Maximum Stored Alerts
+### Alert History Housekeeping
 
-Default: 50 alerts
+**Default settings:**
+- Maximum alerts: 100
+- Maximum age: 7 days
+- Cleanup on add: Yes
 
-**To change:**
-Edit line 635 in `src/index.js`:
-```javascript
-const maxAlerts = 50;
+**To configure:**
+Edit `notifications.json`:
+```json
+{
+  "settings": {
+    "alertHistory": {
+      "maxAlerts": 100,
+      "maxAgeDays": 7,
+      "cleanupOnAdd": true
+    }
+  }
+}
 ```
+
+**Cleanup happens:**
+- Every time a new alert is added
+- Removes alerts older than `maxAgeDays`
+- Keeps only last `maxAlerts` entries
+
+📚 **See:** [Alert History Housekeeping Guide](./ALERT_HISTORY_HOUSEKEEPING.md) for detailed configuration options.
 
 ---
 
@@ -269,42 +376,50 @@ const maxAlerts = 50;
 ### Flow Diagram
 
 ```
-┌──────────────┐
-│ External     │
-│ System       │
-└──────┬───────┘
-       │
-       │ POST /api/alert
-       ▼
-┌──────────────────────┐
-│ Cloudflare Worker    │
-│ - Parse alert        │
-│ - Send notifications │
-│ - Store in KV        │
-└──────┬───────────────┘
-       │
-       │ Stored in KV
-       ▼
-┌──────────────────────┐
-│ recent:alerts        │
-│ [list of 50 alerts]  │
-└──────┬───────────────┘
-       │
-       │ Polled every 10s
-       ▼
-┌──────────────────────┐
-│ Dashboard            │
-│ GET /api/alerts/     │
-│     recent?since=    │
-└──────┬───────────────┘
-       │
-       │ New alerts?
-       ▼
-┌──────────────────────┐
-│ Show Notifications   │
-│ - Toast (in-page)    │
-│ - Browser (system)   │
-└──────────────────────┘
+       ┌─────────────────────────────────────────────────────────┐
+       │                     Alert Sources                        │
+       └───────────────┬─────────────────────────┬────────────────┘
+                       │                         │
+       ┌───────────────▼───────────┐   ┌─────────▼──────────────┐
+       │   External System         │   │   Heartbeat Monitor    │
+       │   (Grafana, Alertmanager) │   │   (Cron Checks)        │
+       └───────────────┬───────────┘   └─────────┬──────────────┘
+                       │                         │
+                       │ POST /api/alert         │ Service status
+                       │                         │ change detected
+                       ▼                         ▼
+       ┌────────────────────────────────────────────────────────┐
+       │          Cloudflare Worker                              │
+       │  - Parse alert                                          │
+       │  - Send notifications (Discord, Slack, etc.)           │
+       │  - Store in KV                                          │
+       └────────────────────────┬───────────────────────────────┘
+                                │
+                                │ Stored in KV
+                                ▼
+       ┌────────────────────────────────────────────────────────┐
+       │  recent:alerts                                          │
+       │  [External alerts + Service status changes]            │
+       │  (Last 50 alerts)                                       │
+       └────────────────────────┬───────────────────────────────┘
+                                │
+                                │ Polled every 10s
+                                ▼
+       ┌────────────────────────────────────────────────────────┐
+       │  Dashboard                                              │
+       │  GET /api/alerts/recent?since=timestamp                │
+       └────────────────────────┬───────────────────────────────┘
+                                │
+                                │ New alerts?
+                                ▼
+       ┌────────────────────────────────────────────────────────┐
+       │  Show Notifications                                     │
+       │  - Toast notification (in-page)                         │
+       │  - Browser notification (system)                        │
+       │  - Critical: 🚨 Red border                             │
+       │  - Warning: ⚠️  Yellow border                          │
+       │  - Info: ℹ️  Blue border                               │
+       └────────────────────────────────────────────────────────┘
 ```
 
 ### Data Storage
@@ -321,9 +436,43 @@ const maxAlerts = 50;
     "severity": "critical|warning|info",
     "source": "string",
     "timestamp": "ISO-8601",
-    "read": false
+    "read": false,
+    "serviceId": "string (optional, for service status changes)",
+    "status": "down|up|degraded (optional, for service status changes)"
   }
 ]
+```
+
+**Sources:**
+- External alerts: `source` = custom (e.g., "grafana", "alertmanager", "custom-monitor")
+- Service status changes: `source` = "heartbeat-monitor"
+
+**Example - External Alert:**
+```json
+{
+  "id": "alert:1731085512000:abc123",
+  "title": "High CPU Usage",
+  "message": "Server CPU usage at 95%",
+  "severity": "warning",
+  "source": "grafana",
+  "timestamp": "2025-11-08T15:45:12.000Z",
+  "read": false
+}
+```
+
+**Example - Service Status Change:**
+```json
+{
+  "id": "alert:1731085512000:def456",
+  "title": "Service Down: Internal API",
+  "message": "Internal API is not responding. Last seen: 11/8/2025, 3:45:12 PM",
+  "severity": "critical",
+  "source": "heartbeat-monitor",
+  "timestamp": "2025-11-08T15:45:12.000Z",
+  "read": false,
+  "serviceId": "service-1",
+  "status": "down"
+}
 ```
 
 ---
@@ -438,7 +587,9 @@ npx wrangler deploy
 https://mon.pipdor.com
 ```
 
-### 3. Send a Test Alert
+### 3. Test Alerts
+
+#### Option A: Send External Alert
 
 ```bash
 curl -X POST https://mon.pipdor.com/api/alert \
@@ -450,11 +601,84 @@ curl -X POST https://mon.pipdor.com/api/alert \
   }'
 ```
 
+#### Option B: Trigger Service Status Change
+
+1. **Send heartbeats** to establish service as "up"
+2. **Stop heartbeats** to trigger "Service Down" alert
+3. **Resume heartbeats** to trigger "Service Recovered" alert
+
 ### 4. See Notification
 
 - Toast notification slides in from right ✅
 - Browser notification (if permitted) 🔔
 - Auto-dismisses after 10 seconds ⏰
+
+---
+
+## 🧪 Local Testing
+
+### Start Local Dev Server
+
+```bash
+cd /path/to/cloudflaremon
+npx wrangler dev --local
+```
+
+Server will start at: `http://localhost:8787`
+
+### Run Comprehensive Test
+
+```bash
+# Test both external alerts AND service status changes
+./test-all-notifications.sh
+```
+
+This will:
+- ✅ Send external alerts (critical, warning, info)
+- ✅ Send Grafana-format alerts
+- ✅ Send Alertmanager-format alerts
+- ✅ Establish service heartbeat (for status changes)
+- ✅ Fetch recent alerts to verify storage
+
+### Open Dashboard
+
+```
+http://localhost:8787
+```
+
+**Within 10 seconds:**
+- 🎊 Toast notifications appear
+- 🔔 Browser notification prompt
+- 📱 All alerts visible
+
+### Trigger Service Status Change (Local)
+
+#### Step 1: Establish Service as "Up"
+```bash
+# Send heartbeats every minute for 5 minutes
+for i in {1..5}; do
+  curl -X POST http://localhost:8787/api/heartbeat \
+    -H "Content-Type: application/json" \
+    -d '{"serviceId": "service-1"}'
+  sleep 60
+done
+```
+
+#### Step 2: Stop Heartbeats
+Wait for cron check (next scheduled time, e.g., every 10 minutes)
+
+**Result:** "🚨 Service Down: [Service Name]" notification
+
+#### Step 3: Resume Heartbeats
+```bash
+curl -X POST http://localhost:8787/api/heartbeat \
+  -H "Content-Type: application/json" \
+  -d '{"serviceId": "service-1"}'
+```
+
+Wait for next cron check
+
+**Result:** "ℹ️ Service Recovered: [Service Name]" notification
 
 ---
 
