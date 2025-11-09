@@ -1,0 +1,87 @@
+{
+  "groups": [
+    {
+      "id": "core-services",
+      "name": "Core Services",
+      "services": ["service-1"],
+      "uptimeThresholdSet": "strict",
+      "stalenessThreshold": 300,
+      "auth": {
+        "required": true
+      },
+      "notifications": {
+        "enabled": true,
+        "channels": ["telegram"],
+        "events": ["down", "up", "degraded"]
+      }
+    },
+    {
+      "id": "infrastructure",
+      "name": "Infrastructure",
+      "services": ["service-2"],
+      "uptimeThresholdSet": "default",
+      "stalenessThreshold": 300,
+      "auth": {
+        "required": false
+      },
+      "notifications": {
+        "enabled": true,
+        "channels": ["discord", "pagerduty"],
+        "events": ["down", "up", "degraded"]
+      }
+    },
+    {
+      "id": "kubernetes",
+      "name": "Kubernetes Cluster",
+      "services": [
+        "k8s-node-1",
+        "k8s-node-2",
+        "k8s-node-3"
+      ],
+      "uptimeThresholdSet": "default",
+      "stalenessThreshold": 300,
+      "auth": {
+        "required": false
+      },
+      "notifications": {
+        "enabled": true,
+        "channels": ["telegram", "pagerduty"],
+        "events": ["down", "up"]
+      }
+    }
+  ],
+  "services": [
+    {
+      "id": "service-1",
+      "name": "Internal API",
+      "enabled": true
+    },
+    {
+      "id": "service-2",
+      "name": "Database Service",
+      "enabled": true,
+      "notifications": {
+        "enabled": false
+      }
+    },
+    {
+      "id": "k8s-node-1",
+      "name": "K8s Node: node-1",
+      "description": "Kubernetes control-plane node (10.0.1.10)",
+      "enabled": true
+    },
+    {
+      "id": "k8s-node-2",
+      "name": "K8s Node: node-2",
+      "description": "Kubernetes worker node (10.0.1.11)",
+      "enabled": true
+    },
+    {
+      "id": "k8s-node-3",
+      "name": "K8s Node: node-3",
+      "description": "Kubernetes worker node (10.0.1.12)",
+      "enabled": true
+    }
+  ]
+}
+

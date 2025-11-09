@@ -1,0 +1,248 @@
+---
+# Example: Heartbeat as a Sidecar Container
+# This shows how to add heartbeat monitoring to your existing application pods
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: heartbeat-sidecar-script
+  namespace: default
+data:
+  heartbeat.sh: |
+    #!/bin/bash
+    set -e
+    
+    echo "[$(date)] Starting heartbeat sidecar for: $SERVICE_ID"
+    
+    while true; do
+      # Build JSON payload
+      JSON_PAYLOAD=$(cat <<EOF
+      {
+        "serviceId": "$SERVICE_ID",
+        "metadata": {
+          "pod": "$POD_NAME",
+          "namespace": "$POD_NAMESPACE",
+          "node": "$NODE_NAME",
+          "app": "$APP_NAME"
+        }
+      }
+      EOF
+      )
+      
+      # Send heartbeat
+      RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$WORKER_URL" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $API_KEY" \
+        -d "$JSON_PAYLOAD")
+      
+      HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+      
+      if [ "$HTTP_CODE" = "200" ]; then
+        echo "[$(date)] ✓ Heartbeat sent for $SERVICE_ID"
+      else
+        echo "[$(date)] ✗ Failed (HTTP $HTTP_CODE)"
+      fi
+      
+      # Sleep interval (2 minutes)
+      sleep 120
+    done
+
+---
+# Example Deployment with Heartbeat Sidecar
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app-with-heartbeat
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+      # Main application container
+      - name: app
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      
+      # Heartbeat sidecar container
+      - name: heartbeat
+        image: alpine:3.19
+        command:
+        - /bin/sh
+        - -c
+        - |
+          apk add --no-cache curl bash
+          chmod +x /scripts/heartbeat.sh
+          /scripts/heartbeat.sh
+        
+        env:
+        # Heartbeat configuration
+        - name: WORKER_URL
+          value: "https://mon.pipdor.com/api/heartbeat"
+        
+        - name: SERVICE_ID
+          value: "my-app-service"  # Your service ID
+        
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: heartbeat-secrets
+              key: api-key
+        
+        # Pod information
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        
+        - name: APP_NAME
+          value: "my-app"
+        
+        volumeMounts:
+        - name: script
+          mountPath: /scripts
+        
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+      
+      volumes:
+      - name: script
+        configMap:
+          name: heartbeat-sidecar-script
+          defaultMode: 0755
+
+---
+# Secret for sidecar (if not already created)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: heartbeat-secrets
+  namespace: default
+type: Opaque
+stringData:
+  api-key: "your-secret-key-here"
+
+---
+# Example: Add Heartbeat Sidecar to Existing StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: database-with-heartbeat
+  namespace: default
+spec:
+  serviceName: database
+  replicas: 3
+  selector:
+    matchLabels:
+      app: database
+  template:
+    metadata:
+      labels:
+        app: database
+    spec:
+      containers:
+      # Main database container
+      - name: postgres
+        image: postgres:16
+        env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: password
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+      
+      # Heartbeat sidecar
+      - name: heartbeat
+        image: alpine:3.19
+        command:
+        - /bin/sh
+        - -c
+        - |
+          apk add --no-cache curl bash
+          chmod +x /scripts/heartbeat.sh
+          /scripts/heartbeat.sh
+        
+        env:
+        - name: WORKER_URL
+          value: "https://mon.pipdor.com/api/heartbeat"
+        - name: SERVICE_ID
+          value: "postgres-cluster"
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: heartbeat-secrets
+              key: api-key
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        
+        volumeMounts:
+        - name: script
+          mountPath: /scripts
+        
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+      
+      volumes:
+      - name: script
+        configMap:
+          name: heartbeat-sidecar-script
+          defaultMode: 0755
+  
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi
+

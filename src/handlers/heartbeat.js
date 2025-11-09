@@ -108,31 +108,55 @@ export async function handleHeartbeat(request, env) {
       const authRequired = service.auth?.required ?? true; // Default to true if not specified
       
       // Validate API key if required and configured
-      if (authRequired && apiKeys && apiKeys[serviceId]) {
-        const expectedApiKey = apiKeys[serviceId];
+      if (authRequired && apiKeys) {
+        // Look up API key with fallback chain:
+        // 1. Exact service ID match (highest priority)
+        // 2. Group ID match (shared key for group)
+        // 3. Wildcard "*" (shared key for all services)
+        let expectedApiKey = null;
+        let keySource = null;
         
-        // Use per-service token if provided, otherwise use shared Authorization header
-        let providedToken = null;
-        if (entry.token) {
-          // Per-service token provided in payload
-          providedToken = `Bearer ${entry.token}`;
+        if (apiKeys[serviceId]) {
+          // Exact match: service-specific key
+          expectedApiKey = apiKeys[serviceId];
+          keySource = 'service';
+        } else if (service.groupId && apiKeys[service.groupId]) {
+          // Group match: shared key for all services in group
+          expectedApiKey = apiKeys[service.groupId];
+          keySource = 'group';
+        } else if (apiKeys['*']) {
+          // Wildcard match: shared key for all services
+          expectedApiKey = apiKeys['*'];
+          keySource = 'wildcard';
+        }
+        
+        if (expectedApiKey) {
+          // Use per-service token if provided, otherwise use shared Authorization header
+          let providedToken = null;
+          if (entry.token) {
+            // Per-service token provided in payload
+            providedToken = `Bearer ${entry.token}`;
+          } else {
+            // Use shared Authorization header
+            providedToken = sharedAuthHeader;
+          }
+          
+          if (providedToken !== `Bearer ${expectedApiKey}`) {
+            results.push({
+              serviceId: serviceId,
+              success: false,
+              error: 'Invalid API key'
+            });
+            continue;
+          }
+          
+          // Log successful auth with key source
+          console.log(`Service ${serviceId} authenticated using ${keySource} key`);
         } else {
-          // Use shared Authorization header
-          providedToken = sharedAuthHeader;
+          // Auth is required but no API key is configured for this service
+          // This is a configuration warning, but allow the heartbeat
+          console.warn(`Service ${serviceId} requires auth but has no API key configured (checked: service, group, wildcard)`);
         }
-        
-        if (providedToken !== `Bearer ${expectedApiKey}`) {
-          results.push({
-            serviceId: serviceId,
-            success: false,
-            error: 'Invalid API key'
-          });
-          continue;
-        }
-      } else if (authRequired && apiKeys && !apiKeys[serviceId]) {
-        // Auth is required but no API key is configured for this service
-        // This is a configuration warning, but allow the heartbeat
-        console.warn(`Service ${serviceId} requires auth but has no API key configured in API_KEYS`);
       } else if (!authRequired) {
         // Auth not required for this service - skip validation
         console.log(`Service ${serviceId} has auth disabled - skipping authentication`);

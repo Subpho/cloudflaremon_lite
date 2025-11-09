@@ -1,0 +1,309 @@
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring
+
+---
+# Secret for API credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: heartbeat-secrets
+  namespace: monitoring
+type: Opaque
+stringData:
+  # Replace with your actual values
+  worker-url: "https://mon.pipdor.com/api/heartbeat"
+  api-key: "your-secret-key-here"
+
+---
+# ConfigMap for heartbeat script
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: heartbeat-cronjob-script
+  namespace: monitoring
+data:
+  heartbeat.sh: |
+    #!/bin/bash
+    set -e
+    
+    # Get configuration from environment
+    WORKER_URL="${WORKER_URL}"
+    API_KEY="${API_KEY}"
+    CLUSTER_NAME="${CLUSTER_NAME}"
+    
+    echo "[$(date)] Checking all nodes in cluster: $CLUSTER_NAME"
+    
+    # Get all nodes with their status
+    NODE_DATA=$(kubectl get nodes -o json)
+    
+    if [ -z "$NODE_DATA" ]; then
+      echo "Error: Failed to get nodes from cluster"
+      exit 1
+    fi
+    
+    # Count nodes
+    TOTAL_NODES=$(echo "$NODE_DATA" | jq '.items | length')
+    echo "Found $TOTAL_NODES nodes"
+    
+    # Build batch heartbeat payload
+    # Create array of service objects with node information
+    SERVICES_JSON="["
+    FIRST=true
+    
+    while read -r node; do
+      # Parse node information (node is already a single item, not the full array)
+      NODE_NAME=$(echo "$node" | jq -r '.metadata.name')
+      NODE_STATUS=$(echo "$node" | jq -r '.status.conditions[] | select(.type=="Ready") | .status')
+      NODE_IP=$(echo "$node" | jq -r '.status.addresses[] | select(.type=="InternalIP") | .address // "unknown"')
+      NODE_ROLE=$(echo "$node" | jq -r '.metadata.labels."node-role.kubernetes.io/control-plane" // .metadata.labels."node-role.kubernetes.io/master" // "worker"')
+      
+      # Determine if node is ready
+      if [ "$NODE_STATUS" = "True" ]; then
+        STATUS_INFO="ready"
+      else
+        STATUS_INFO="not-ready"
+      fi
+      
+      # Add comma separator
+      if [ "$FIRST" = false ]; then
+        SERVICES_JSON+=","
+      fi
+      FIRST=false
+      
+      # Build service object for this node
+      # Using node name directly as serviceId
+      SERVICES_JSON+=$(cat <<EOF
+    {
+      "serviceId": "$NODE_NAME",
+      "metadata": {
+        "cluster": "$CLUSTER_NAME",
+        "ip": "$NODE_IP",
+        "role": "$NODE_ROLE",
+        "status": "$STATUS_INFO"
+      }
+    }
+    EOF
+    )
+      
+      echo "  - $NODE_NAME [$STATUS_INFO] ($NODE_IP)"
+      
+    done < <(echo "$NODE_DATA" | jq -c '.items[]')
+    
+    SERVICES_JSON+="]"
+    
+    # Build final payload
+    JSON_PAYLOAD=$(cat <<EOF
+    {
+      "services": $SERVICES_JSON
+    }
+    EOF
+    )
+    
+    echo ""
+    echo "Sending batch heartbeat for $TOTAL_NODES nodes..."
+    
+    # Send batch heartbeat
+    RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$WORKER_URL" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $API_KEY" \
+      -d "$JSON_PAYLOAD")
+    
+    # Split response body and status code
+    HTTP_BODY=$(echo "$RESPONSE" | head -n -1)
+    HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+    
+    # Check response
+    if [ "$HTTP_CODE" = "200" ]; then
+      echo "[$(date)] ✓ Batch heartbeat sent successfully for $TOTAL_NODES nodes"
+      exit 0
+    elif [ "$HTTP_CODE" = "207" ]; then
+      echo "[$(date)] ⚠ Partial success (HTTP 207)"
+      echo "$HTTP_BODY"
+      exit 0
+    else
+      echo "[$(date)] ✗ Failed (HTTP $HTTP_CODE): $HTTP_BODY"
+      exit 1
+    fi
+
+---
+# ServiceAccount with permissions to read cluster state
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: heartbeat-cronjob
+  namespace: monitoring
+
+---
+# ClusterRole for reading cluster information
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: heartbeat-reader
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list"]
+
+---
+# ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: heartbeat-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: heartbeat-reader
+subjects:
+- kind: ServiceAccount
+  name: heartbeat-cronjob
+  namespace: monitoring
+
+---
+# CronJob - runs every 2 minutes
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: heartbeat-client
+  namespace: monitoring
+  labels:
+    app: heartbeat-client
+spec:
+  # Schedule: every 2 minutes
+  schedule: "*/2 * * * *"
+  
+  # Keep last 3 successful and 1 failed job
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  
+  # Allow concurrent runs: false to prevent overlapping
+  concurrencyPolicy: Forbid
+  
+  # Start deadline: 60 seconds
+  startingDeadlineSeconds: 60
+  
+  jobTemplate:
+    metadata:
+      labels:
+        app: heartbeat-client
+    spec:
+      # Timeout: 30 seconds
+      activeDeadlineSeconds: 30
+      
+      # Backoff limit
+      backoffLimit: 2
+      
+      template:
+        metadata:
+          labels:
+            app: heartbeat-client
+        spec:
+          serviceAccountName: heartbeat-cronjob
+          restartPolicy: Never
+          
+          containers:
+          - name: heartbeat
+            image: bitnami/kubectl:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              # Install curl if not available
+              if ! command -v curl &> /dev/null; then
+                apt-get update && apt-get install -y curl
+              fi
+              
+              # Make script executable
+              chmod +x /scripts/heartbeat.sh
+              
+              # Run heartbeat
+              /scripts/heartbeat.sh
+            
+            env:
+            # Worker URL from secret
+            - name: WORKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: heartbeat-secrets
+                  key: worker-url
+            
+            # API Key from secret
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: heartbeat-secrets
+                  key: api-key
+            
+            # Cluster name
+            - name: CLUSTER_NAME
+              value: "production"  # Change this to your cluster name
+            
+            volumeMounts:
+            - name: script
+              mountPath: /scripts
+            
+            resources:
+              requests:
+                memory: "32Mi"
+                cpu: "10m"
+              limits:
+                memory: "128Mi"
+                cpu: "100m"
+          
+          volumes:
+          - name: script
+            configMap:
+              name: heartbeat-cronjob-script
+              defaultMode: 0755
+
+---
+# Optional: Manual Job for testing
+# Uncomment to create a one-time test job
+# apiVersion: batch/v1
+# kind: Job
+# metadata:
+#   name: heartbeat-test
+#   namespace: monitoring
+# spec:
+#   template:
+#     spec:
+#       serviceAccountName: heartbeat-cronjob
+#       restartPolicy: Never
+#       containers:
+#       - name: heartbeat
+#         image: bitnami/kubectl:latest
+#         command:
+#         - /bin/bash
+#         - -c
+#         - |
+#           apt-get update && apt-get install -y curl
+#           chmod +x /scripts/heartbeat.sh
+#           /scripts/heartbeat.sh
+#         env:
+#         - name: WORKER_URL
+#           valueFrom:
+#             secretKeyRef:
+#               name: heartbeat-secrets
+#               key: worker-url
+#         - name: API_KEY
+#           valueFrom:
+#             secretKeyRef:
+#               name: heartbeat-secrets
+#               key: api-key
+#         - name: CLUSTER_NAME
+#           value: "production"
+#         volumeMounts:
+#         - name: script
+#           mountPath: /scripts
+#       volumes:
+#       - name: script
+#         configMap:
+#           name: heartbeat-cronjob-script
+#           defaultMode: 0755
+

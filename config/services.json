@@ -1,9 +1,9 @@
 {
   "groups": [
     {
-      "id": "core-services",
-      "name": "Core Services",
-      "services": ["service-1"],
+      "id": "k3s-cluster",
+      "name": "K3s Cluster",
+      "services": ["gmk-m6","raspi4-8g","um760"],
       "uptimeThresholdSet": "strict",
       "stalenessThreshold": 300,
       "auth": {
@@ -14,35 +14,32 @@
         "channels": ["telegram"],
         "events": ["down", "up", "degraded"]
       }
-    },
-    {
-      "id": "infrastructure",
-      "name": "Infrastructure",
-      "services": ["service-2"],
-      "uptimeThresholdSet": "default",
-      "stalenessThreshold": 300,
-      "auth": {
-        "required": false
-      },
-      "notifications": {
-        "enabled": true,
-        "channels": ["discord", "pagerduty"],
-        "events": ["down", "up", "degraded"]
-      }
     }
   ],
   "services": [
     {
-      "id": "service-1",
-      "name": "Internal API",
+      "id": "gmk-m6",
+      "name": "GMK M6",
       "enabled": true
     },
     {
-      "id": "service-2",
-      "name": "Database Service",
+      "id": "raspi4-8g",
+      "name": "Raspberry Pi 4 8GB",
+      "enabled": true
+    },
+    {
+      "id": "um760",
+      "name": "UM760",
+      "enabled": true
+    },
+    {
+      "id": "unraid-n1",
+      "name": "Unraid N1",
       "enabled": true,
       "notifications": {
-        "enabled": false
+        "enabled": true,
+        "channels": ["telegram"],
+        "events": ["down", "up", "degraded"]
       }
     }
   ]

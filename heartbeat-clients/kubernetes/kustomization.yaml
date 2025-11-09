@@ -1,0 +1,34 @@
+# Kustomize configuration for heartbeat DaemonSet
+# Usage: kubectl apply -k .
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+resources:
+- heartbeat-daemonset.yaml
+
+# Customize with overlays
+# commonLabels:
+#   team: platform
+#   environment: production
+
+# Generate ConfigMap from files
+# configMapGenerator:
+# - name: heartbeat-script
+#   files:
+#   - heartbeat.sh
+
+# Generate Secret from files (for development only - use sealed secrets in prod)
+# secretGenerator:
+# - name: heartbeat-secrets
+#   literals:
+#   - worker-url=https://mon.pipdor.com/api/heartbeat
+#   - service-id=k8s-cluster
+#   - api-key=your-secret-key
+
+# Patches for different environments
+# patchesStrategicMerge:
+# - patches/production.yaml
+
