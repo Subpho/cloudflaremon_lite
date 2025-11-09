@@ -1,0 +1,165 @@
+# Example Helm Values for Heartbeat DaemonSet
+# This is a reference for creating a Helm chart
+# Can be adapted to your existing Helm chart structure
+
+heartbeat:
+  # Enable/disable the DaemonSet
+  enabled: true
+  
+  # Namespace
+  namespace: monitoring
+  
+  # Image configuration
+  image:
+    repository: alpine
+    tag: "3.19"
+    pullPolicy: IfNotPresent
+  
+  # Heartbeat configuration
+  config:
+    # Worker URL
+    workerUrl: "https://mon.pipdor.com/api/heartbeat"
+    
+    # Service ID
+    serviceId: "k8s-cluster"
+    
+    # API Key (prefer using existingSecret in production)
+    apiKey: ""
+    
+    # Use existing secret
+    existingSecret: "heartbeat-secrets"
+    existingSecretKeyMapping:
+      workerUrl: worker-url
+      serviceId: service-id
+      apiKey: api-key
+    
+    # Heartbeat interval in seconds
+    interval: 120  # 2 minutes
+  
+  # Resource limits
+  resources:
+    requests:
+      memory: "32Mi"
+      cpu: "10m"
+    limits:
+      memory: "64Mi"
+      cpu: "50m"
+  
+  # Node selector
+  nodeSelector: {}
+    # node-role.kubernetes.io/worker: "true"
+  
+  # Tolerations
+  tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/master
+    operator: Exists
+    effect: NoSchedule
+  
+  # Affinity rules
+  affinity: {}
+  
+  # Update strategy
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  
+  # Security context
+  securityContext:
+    runAsNonRoot: false
+    runAsUser: 0
+  
+  # Pod annotations
+  podAnnotations: {}
+    # prometheus.io/scrape: "false"
+  
+  # Pod labels
+  podLabels: {}
+  
+  # Service account
+  serviceAccount:
+    create: true
+    name: heartbeat-client
+    annotations: {}
+  
+  # Priority class
+  priorityClassName: ""
+  
+  # Extra environment variables
+  extraEnv: []
+    # - name: CLUSTER_NAME
+    #   value: "production"
+  
+  # Custom metadata to include in heartbeats
+  metadata:
+    cluster: "production"
+    region: "us-east-1"
+    environment: "prod"
+  
+  # Monitoring/Observability
+  monitoring:
+    enabled: false
+    # Add Prometheus metrics endpoint
+    prometheus:
+      enabled: false
+      port: 9090
+
+---
+# Example usage with common Helm patterns
+
+# Development values (values-dev.yaml)
+dev:
+  heartbeat:
+    config:
+      workerUrl: "http://localhost:8787/api/heartbeat"
+      serviceId: "k8s-dev"
+      interval: 60  # More frequent in dev
+    resources:
+      requests:
+        memory: "16Mi"
+        cpu: "5m"
+      limits:
+        memory: "32Mi"
+        cpu: "25m"
+
+# Production values (values-prod.yaml)
+prod:
+  heartbeat:
+    config:
+      existingSecret: "heartbeat-secrets-prod"
+      interval: 120
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "10m"
+      limits:
+        memory: "64Mi"
+        cpu: "50m"
+    tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    nodeSelector:
+      node-role.kubernetes.io/worker: "true"
+    podAnnotations:
+      prometheus.io/scrape: "false"
+    metadata:
+      cluster: "prod-us-east-1"
+      region: "us-east-1"
+      environment: "production"
+
+# Staging values (values-staging.yaml)
+staging:
+  heartbeat:
+    config:
+      workerUrl: "https://mon-staging.pipdor.com/api/heartbeat"
+      serviceId: "k8s-staging"
+      existingSecret: "heartbeat-secrets-staging"
+    metadata:
+      cluster: "staging-us-west-2"
+      region: "us-west-2"
+      environment: "staging"
+

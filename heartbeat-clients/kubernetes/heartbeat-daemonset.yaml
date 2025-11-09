@@ -1,0 +1,218 @@
+---
+# Namespace (optional - remove if using default namespace)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring
+
+---
+# Secret for API credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: heartbeat-secrets
+  namespace: monitoring
+type: Opaque
+stringData:
+  api-key: "your-secret-key-here"
+
+---
+# ConfigMap for heartbeat script
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: heartbeat-script
+  namespace: monitoring
+data:
+  heartbeat.sh: |
+    #!/bin/bash
+    set -e
+    
+    # Get configuration from environment
+    WORKER_URL="${WORKER_URL}"
+    API_KEY="${API_KEY}"
+    
+    # Add node information to metadata
+    SERVICE_ID="${NODE_NAME}"
+    POD_NAME="${POD_NAME}"
+    POD_NAMESPACE="${POD_NAMESPACE}"
+    
+    # Create unique service ID using node name
+    # This ensures each node reports as a separate service
+    
+    echo "[$(date)] Sending heartbeat for service: $SERVICE_ID (node: $NODE_NAME)"
+    
+    # Build JSON payload with node metadata
+    JSON_PAYLOAD=$(cat <<EOF
+    {
+      "serviceId": "$SERVICE_ID",
+      "metadata": {
+        "node": "$NODE_NAME",
+        "pod": "$POD_NAME",
+        "namespace": "$POD_NAMESPACE"
+      }
+    }
+    EOF
+    )
+    
+    # Send heartbeat
+    RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$WORKER_URL" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $API_KEY" \
+      -d "$JSON_PAYLOAD")
+    
+    # Split response body and status code
+    HTTP_BODY=$(echo "$RESPONSE" | head -n -1)
+    HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+    
+    # Check response
+    if [ "$HTTP_CODE" = "200" ]; then
+      echo "[$(date)] ✓ Heartbeat sent successfully"
+      exit 0
+    else
+      echo "[$(date)] ✗ Failed (HTTP $HTTP_CODE): $HTTP_BODY"
+      exit 1
+    fi
+
+---
+# DaemonSet - runs heartbeat client on every node
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: heartbeat-client
+  namespace: monitoring
+  labels:
+    app: heartbeat-client
+spec:
+  selector:
+    matchLabels:
+      app: heartbeat-client
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: heartbeat-client
+    spec:
+      # Use host network (optional - enables monitoring of node network)
+      # hostNetwork: true
+      # dnsPolicy: ClusterFirstWithHostNet
+      
+      # Node selector (optional - only run on specific nodes)
+      # nodeSelector:
+      #   node-role.kubernetes.io/worker: "true"
+      
+      # Tolerations to ensure DaemonSet runs on all nodes including control plane
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      
+      containers:
+      - name: heartbeat
+        image: alpine:3.19
+        command:
+        - /bin/sh
+        - -c
+        - |
+          # Install curl
+          apk add --no-cache curl bash
+          
+          # Make script executable
+          chmod +x /scripts/heartbeat.sh
+          
+          # Run heartbeat every 2 minutes
+          while true; do
+            /scripts/heartbeat.sh
+            echo "Sleeping for 2 minutes..."
+            sleep 120
+          done
+        
+        env:
+        # Worker URL from secret
+        - name: WORKER_URL
+          valueFrom:
+            secretKeyRef:
+              name: heartbeat-secrets
+              key: worker-url
+        
+        # Service ID prefix from secret (will be combined with node name)
+        - name: SERVICE_ID_PREFIX
+          valueFrom:
+            secretKeyRef:
+              name: heartbeat-secrets
+              key: service-id-prefix
+        
+        # API Key from secret
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: heartbeat-secrets
+              key: api-key
+        
+        # Node name from downward API
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        
+        # Pod name from downward API
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        
+        # Pod namespace from downward API
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        
+        volumeMounts:
+        - name: script
+          mountPath: /scripts
+        
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+        
+        # Health checks
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pgrep -f heartbeat.sh > /dev/null
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+      
+      volumes:
+      - name: script
+        configMap:
+          name: heartbeat-script
+          defaultMode: 0755
+      
+      # Restart policy
+      restartPolicy: Always
+
+---
+# ServiceAccount (optional but recommended)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: heartbeat-client
+  namespace: monitoring
+
