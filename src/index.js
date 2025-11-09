@@ -97,6 +97,9 @@ export default {
     } else if (url.pathname === '/api/alert' && request.method === 'POST') {
       // Receive external alerts (Alertmanager, Grafana, etc.)
       return handleCustomAlert(env, request);
+    } else if (url.pathname === '/api/alerts/recent') {
+      // Get recent alerts for dashboard notifications
+      return handleGetRecentAlerts(env, url);
     }
 
     return new Response('Not Found', { status: 404 });
@@ -557,6 +560,123 @@ async function handleTestNotification(env, request) {
 }
 
 /**
+ * Handle get recent alerts API
+ */
+async function handleGetRecentAlerts(env, url) {
+  try {
+    const since = url.searchParams.get('since'); // Optional: get alerts since timestamp
+    const limit = parseInt(url.searchParams.get('limit') || '20');
+    
+    // Get alerts from KV
+    const alertsJson = await env.HEARTBEAT_LOGS.get('recent:alerts');
+    let alerts = alertsJson ? JSON.parse(alertsJson) : [];
+    
+    // Filter by 'since' timestamp if provided
+    if (since) {
+      alerts = alerts.filter(alert => alert.timestamp > since);
+    }
+    
+    // Limit results
+    alerts = alerts.slice(0, limit);
+    
+    return new Response(JSON.stringify({
+      success: true,
+      alerts: alerts,
+      count: alerts.length
+    }, null, 2), {
+      headers: { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching recent alerts:', error);
+    return new Response(JSON.stringify({ 
+      success: false,
+      error: error.message,
+      alerts: [],
+      count: 0
+    }), {
+      status: 500,
+      headers: { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
+  }
+}
+
+/**
+ * Store recent alert for dashboard notifications
+ */
+/**
+ * Clean up old alerts based on configuration
+ */
+function cleanupAlerts(alerts, config = {}) {
+  // Default settings
+  const maxAlerts = config.maxAlerts || 100;
+  const maxAgeDays = config.maxAgeDays || 7;
+  const now = Date.now();
+  const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+  
+  let cleaned = alerts;
+  
+  // Remove alerts older than maxAgeDays
+  cleaned = cleaned.filter(alert => {
+    const alertTime = new Date(alert.timestamp).getTime();
+    const age = now - alertTime;
+    return age < maxAgeMs;
+  });
+  
+  // Keep only last maxAlerts
+  if (cleaned.length > maxAlerts) {
+    cleaned = cleaned.slice(0, maxAlerts);
+  }
+  
+  return cleaned;
+}
+
+async function storeRecentAlert(env, alertData) {
+  const timestamp = new Date().toISOString();
+  const alertId = `alert:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
+  
+  // Create alert record
+  const alert = {
+    id: alertId,
+    title: alertData.title,
+    message: alertData.message,
+    severity: alertData.severity || 'warning',
+    source: alertData.source || 'external',
+    timestamp: timestamp,
+    read: false
+  };
+  
+  // Get existing alerts
+  const alertsJson = await env.HEARTBEAT_LOGS.get('recent:alerts');
+  let alerts = alertsJson ? JSON.parse(alertsJson) : [];
+  
+  // Add new alert at the beginning
+  alerts.unshift(alert);
+  
+  // Load notification config for alert history settings
+  const notificationsConfig = (await import('../notifications.json')).default;
+  const historyConfig = notificationsConfig?.settings?.alertHistory || {};
+  
+  // Clean up old/excess alerts if enabled
+  if (historyConfig.cleanupOnAdd !== false) {
+    alerts = cleanupAlerts(alerts, historyConfig);
+  }
+  
+  // Store back
+  await env.HEARTBEAT_LOGS.put('recent:alerts', JSON.stringify(alerts));
+  
+  console.log(`Stored alert for dashboard: ${alertData.title} (total: ${alerts.length})`);
+}
+
+/**
  * Handle custom alert from external tools (Alertmanager, Grafana, etc.)
  */
 async function handleCustomAlert(env, request) {
@@ -636,6 +756,14 @@ async function handleCustomAlert(env, request) {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       });
+    }
+
+    // Store alert for dashboard notifications
+    try {
+      await storeRecentAlert(env, alertData);
+    } catch (error) {
+      console.error('Error storing alert for dashboard:', error);
+      // Don't fail the request if storage fails
     }
 
     return new Response(JSON.stringify({
@@ -1207,7 +1335,7 @@ async function handleDashboard(env) {
             gap: 8px;
         }
         
-        .theme-toggle, .export-btn {
+        .theme-toggle, .export-btn, .auto-refresh-btn {
             background: var(--bg-primary);
             color: var(--text-primary);
             border: 1px solid var(--border-color);
@@ -1221,11 +1349,89 @@ async function handleDashboard(env) {
             justify-content: center;
             width: 44px;
             height: 44px;
+            position: relative;
         }
         
-        .theme-toggle:hover, .export-btn:hover {
+        .theme-toggle:hover, .export-btn:hover, .auto-refresh-btn:hover {
             background: var(--bg-hover);
             transform: scale(1.05);
+        }
+        
+        .auto-refresh-btn.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #163d92;
+        }
+        
+        .auto-refresh-btn.active:hover {
+            background:#163d92;
+        }
+        
+        .auto-refresh-timer {
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            background: #10b981;
+            color: white;
+            font-size: 9px;
+            font-weight: 600;
+            padding: 2px 4px;
+            border-radius: 4px;
+            min-width: 18px;
+            text-align: center;
+        }
+        
+        /* Auto-refresh dropdown menu */
+        .auto-refresh-menu {
+            display: none;
+            position: absolute;
+            top: 52px;
+            right: 0;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 8px;
+            min-width: 180px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            animation: slideDown 0.2s ease-out;
+        }
+        
+        .auto-refresh-menu.show {
+            display: block;
+        }
+        
+        .auto-refresh-menu-item {
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: background 0.2s;
+        }
+        
+        .auto-refresh-menu-item:hover {
+            background: var(--bg-hover);
+        }
+        
+        .auto-refresh-menu-item.active {
+            background: #3b82f620;
+            color: #3b82f6;
+            font-weight: 500;
+        }
+        
+        .auto-refresh-menu-item.active::after {
+            content: '✓';
+            margin-left: 8px;
+        }
+        
+        .auto-refresh-menu-divider {
+            height: 1px;
+            background: var(--border-color);
+            margin: 8px 0;
         }
         
         .refresh-btn {
@@ -1558,17 +1764,165 @@ async function handleDashboard(env) {
             color: var(--text-primary);
         }
         
+        /* Alert Toast Notifications */
+        .alert-toast-container {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 10001;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-width: 400px;
+        }
+        
+        .alert-toast {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            animation: slideInRight 0.3s ease-out;
+            position: relative;
+            display: flex;
+            gap: 12px;
+        }
+        
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .alert-toast.closing {
+            animation: slideOutRight 0.3s ease-out forwards;
+        }
+        
+        @keyframes slideOutRight {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+        
+        .alert-toast-icon {
+            font-size: 24px;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+        
+        .alert-toast-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .alert-toast-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+        }
+        
+        .alert-toast-message {
+            font-size: 13px;
+            color: var(--text-secondary);
+            word-wrap: break-word;
+        }
+        
+        .alert-toast-time {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            margin-top: 4px;
+        }
+        
+        .alert-toast-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: none;
+            border: none;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        
+        .alert-toast-close:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        
+        .alert-toast.severity-critical {
+            border-left: 4px solid #ef4444;
+        }
+        
+        .alert-toast.severity-warning {
+            border-left: 4px solid #f59e0b;
+        }
+        
+        .alert-toast.severity-info {
+            border-left: 4px solid #3b82f6;
+        }
+        
+        @media (max-width: 768px) {
+            .alert-toast-container {
+                left: 20px;
+                right: 20px;
+                max-width: none;
+            }
+        }
+        
         /* Custom CSS from config */
         ${uiConfig.customCss}
     </style>
 </head>
 <body>
+    <!-- Alert Toast Container -->
+    <div class="alert-toast-container" id="alertToastContainer"></div>
+    
     <div class="container">
         ${uiConfig.theme.showToggle || uiConfig.features.showExportButton !== false ? `
         <div class="theme-toggle-container">
             <button class="export-btn" id="exportBtn" aria-label="Export data" title="Export CSV">
                 <span>📊</span>
             </button>
+            <button class="auto-refresh-btn" id="autoRefreshBtn" aria-label="Toggle auto-refresh" title="Auto-refresh">
+                <span id="autoRefreshIcon">🔄</span>
+                <span class="auto-refresh-timer" id="autoRefreshTimer" style="display: none;"></span>
+            </button>
+            <div class="auto-refresh-menu" id="autoRefreshMenu">
+                <div class="auto-refresh-menu-item" data-seconds="0">
+                    <span>Off</span>
+                </div>
+                <div class="auto-refresh-menu-divider"></div>
+                <div class="auto-refresh-menu-item" data-seconds="10">
+                    <span>10 seconds</span>
+                </div>
+                <div class="auto-refresh-menu-item" data-seconds="30">
+                    <span>30 seconds</span>
+                </div>
+                <div class="auto-refresh-menu-item" data-seconds="60">
+                    <span>1 minute</span>
+                </div>
+                <div class="auto-refresh-menu-item" data-seconds="300">
+                    <span>5 minutes</span>
+                </div>
+                <div class="auto-refresh-menu-item" data-seconds="600">
+                    <span>10 minutes</span>
+                </div>
+            </div>
             ${uiConfig.theme.showToggle ? `
             <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
                 <span id="themeIcon">🌙</span>
@@ -2109,8 +2463,224 @@ async function handleDashboard(env) {
         // Load status on page load
         loadStatus();
         
-        // Auto-refresh based on config
-        ${uiConfig.features.autoRefreshSeconds > 0 ? `setInterval(loadStatus, ${uiConfig.features.autoRefreshSeconds * 1000});` : ''}
+        // Auto-refresh functionality
+        const AUTO_REFRESH_KEY = 'auto-refresh-interval';
+        const DEFAULT_REFRESH_SECONDS = ${uiConfig.features.autoRefreshSeconds || 0};
+        let autoRefreshInterval = null;
+        let autoRefreshCountdown = null;
+        let autoRefreshSecondsLeft = 0;
+        
+        function getAutoRefreshInterval() {
+            const stored = localStorage.getItem(AUTO_REFRESH_KEY);
+            return stored !== null ? parseInt(stored) : DEFAULT_REFRESH_SECONDS;
+        }
+        
+        function setAutoRefreshInterval(seconds) {
+            localStorage.setItem(AUTO_REFRESH_KEY, seconds.toString());
+            startAutoRefresh(seconds);
+            updateAutoRefreshUI(seconds);
+        }
+        
+        function startAutoRefresh(seconds) {
+            // Clear existing intervals
+            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+            if (autoRefreshCountdown) clearInterval(autoRefreshCountdown);
+            
+            const btn = document.getElementById('autoRefreshBtn');
+            const timer = document.getElementById('autoRefreshTimer');
+            
+            if (seconds > 0) {
+                // Enable auto-refresh
+                btn.classList.add('active');
+                timer.style.display = 'block';
+                autoRefreshSecondsLeft = seconds;
+                
+                // Update countdown every second
+                autoRefreshCountdown = setInterval(() => {
+                    autoRefreshSecondsLeft--;
+                    timer.textContent = autoRefreshSecondsLeft;
+                    
+                    if (autoRefreshSecondsLeft <= 0) {
+                        autoRefreshSecondsLeft = seconds;
+                    }
+                }, 1000);
+                
+                // Refresh data at interval
+                autoRefreshInterval = setInterval(() => {
+                    loadStatus();
+                    autoRefreshSecondsLeft = seconds;
+                }, seconds * 1000);
+                
+                timer.textContent = seconds;
+            } else {
+                // Disable auto-refresh
+                btn.classList.remove('active');
+                timer.style.display = 'none';
+                autoRefreshSecondsLeft = 0;
+            }
+        }
+        
+        function updateAutoRefreshUI(currentSeconds) {
+            const menuItems = document.querySelectorAll('.auto-refresh-menu-item');
+            menuItems.forEach(item => {
+                const seconds = parseInt(item.getAttribute('data-seconds'));
+                if (seconds === currentSeconds) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+        }
+        
+        // Initialize auto-refresh
+        const initialRefreshInterval = getAutoRefreshInterval();
+        startAutoRefresh(initialRefreshInterval);
+        updateAutoRefreshUI(initialRefreshInterval);
+        
+        // Toggle auto-refresh menu
+        const autoRefreshBtn = document.getElementById('autoRefreshBtn');
+        const autoRefreshMenu = document.getElementById('autoRefreshMenu');
+        let autoRefreshMenuOpen = false;
+        
+        if (autoRefreshBtn) {
+            autoRefreshBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                autoRefreshMenuOpen = !autoRefreshMenuOpen;
+                if (autoRefreshMenuOpen) {
+                    autoRefreshMenu.classList.add('show');
+                } else {
+                    autoRefreshMenu.classList.remove('show');
+                }
+            });
+        }
+        
+        // Handle menu item clicks
+        document.querySelectorAll('.auto-refresh-menu-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const seconds = parseInt(item.getAttribute('data-seconds'));
+                setAutoRefreshInterval(seconds);
+                autoRefreshMenu.classList.remove('show');
+                autoRefreshMenuOpen = false;
+            });
+        });
+        
+        // Close menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (autoRefreshMenuOpen && !autoRefreshMenu.contains(e.target) && !autoRefreshBtn.contains(e.target)) {
+                autoRefreshMenu.classList.remove('show');
+                autoRefreshMenuOpen = false;
+            }
+        });
+        
+        // Alert Notifications
+        const ALERT_CHECK_INTERVAL = 10000; // Check every 10 seconds
+        const LAST_ALERT_TIMESTAMP_KEY = 'last-alert-timestamp';
+        let alertCheckInterval = null;
+        
+        function getLastAlertTimestamp() {
+            return localStorage.getItem(LAST_ALERT_TIMESTAMP_KEY) || new Date(0).toISOString();
+        }
+        
+        function setLastAlertTimestamp(timestamp) {
+            localStorage.setItem(LAST_ALERT_TIMESTAMP_KEY, timestamp);
+        }
+        
+        function getSeverityIcon(severity) {
+            const icons = {
+                'critical': '🚨',
+                'error': '❌',
+                'warning': '⚠️',
+                'info': 'ℹ️',
+                'success': '✅'
+            };
+            return icons[severity?.toLowerCase()] || '🔔';
+        }
+        
+        function showToastNotification(alert) {
+            const container = document.getElementById('alertToastContainer');
+            if (!container) return;
+            
+            const toast = document.createElement('div');
+            toast.className = \`alert-toast severity-\${alert.severity}\`;
+            toast.innerHTML = \`
+                <div class="alert-toast-icon">\${getSeverityIcon(alert.severity)}</div>
+                <div class="alert-toast-content">
+                    <div class="alert-toast-title">\${alert.title}</div>
+                    <div class="alert-toast-message">\${alert.message}</div>
+                    <div class="alert-toast-time">\${new Date(alert.timestamp).toLocaleString()}</div>
+                </div>
+                <button class="alert-toast-close" onclick="closeToast(this.parentElement)">×</button>
+            \`;
+            
+            container.appendChild(toast);
+            
+            // Auto-dismiss after 10 seconds
+            setTimeout(() => {
+                closeToast(toast);
+            }, 10000);
+        }
+        
+        window.closeToast = function(toast) {
+            toast.classList.add('closing');
+            setTimeout(() => {
+                toast.remove();
+            }, 300);
+        };
+        
+        function showBrowserNotification(alert) {
+            // Check if browser supports notifications
+            if (!('Notification' in window)) {
+                return;
+            }
+            
+            // Check if permission is granted
+            if (Notification.permission === 'granted') {
+                new Notification(alert.title, {
+                    body: alert.message,
+                    icon: getSeverityIcon(alert.severity),
+                    tag: alert.id,
+                    timestamp: new Date(alert.timestamp).getTime()
+                });
+            } else if (Notification.permission !== 'denied') {
+                // Request permission
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        new Notification(alert.title, {
+                            body: alert.message,
+                            icon: getSeverityIcon(alert.severity),
+                            tag: alert.id
+                        });
+                    }
+                });
+            }
+        }
+        
+        async function checkForNewAlerts() {
+            try {
+                const since = getLastAlertTimestamp();
+                const response = await fetch(\`/api/alerts/recent?since=\${encodeURIComponent(since)}&limit=10\`);
+                const data = await response.json();
+                
+                if (data.success && data.alerts && data.alerts.length > 0) {
+                    // Show notifications for new alerts
+                    data.alerts.forEach(alert => {
+                        showToastNotification(alert);
+                        showBrowserNotification(alert);
+                    });
+                    
+                    // Update last seen timestamp to the most recent alert
+                    const latestTimestamp = data.alerts[0].timestamp;
+                    setLastAlertTimestamp(latestTimestamp);
+                }
+            } catch (error) {
+                console.error('Error checking for alerts:', error);
+            }
+        }
+        
+        // Start checking for alerts
+        checkForNewAlerts();
+        alertCheckInterval = setInterval(checkForNewAlerts, ALERT_CHECK_INTERVAL);
         
         // Export functionality
         let exportServices = [];

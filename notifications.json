@@ -62,7 +62,12 @@
     "cooldownMinutes": 5,
     "repeatAlertMinutes": 60,
     "includeMetadata": true,
-    "timezone": "UTC"
+    "timezone": "UTC",
+    "alertHistory": {
+      "maxAlerts": 100,
+      "maxAgeDays": 7,
+      "cleanupOnAdd": true
+    }
   },
   "templates": {
     "discord": {
