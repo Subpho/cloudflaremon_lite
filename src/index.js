@@ -214,6 +214,9 @@ async function handleDashboard(env) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>${uiConfig.branding.pageTitle}</title>
     <link rel="icon" href="${uiConfig.branding.favicon}">
     <style>
@@ -2829,9 +2832,12 @@ async function handleDashboard(env) {
   return new Response(html, {
     headers: { 
       'Content-Type': 'text/html',
-      'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+      'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0, private',
       'Pragma': 'no-cache',
-      'Expires': '0'
+      'Expires': '0',
+      'CDN-Cache-Control': 'no-store',
+      'Cloudflare-CDN-Cache-Control': 'no-store',
+      'Vary': 'Accept-Encoding'
     }
   });
 }
