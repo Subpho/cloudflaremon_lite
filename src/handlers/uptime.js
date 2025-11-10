@@ -19,7 +19,10 @@ export async function handleGetUptime(env, url) {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       }
     });
   }
@@ -27,8 +30,8 @@ export async function handleGetUptime(env, url) {
   try {
     const uiConfig = getUiConfig();
     
-    // Get all monitor data in a single read
-    const monitorDataJson = await env.HEARTBEAT_LOGS.get('monitor:data');
+    // Get all monitor data in a single read (disable KV cache)
+    const monitorDataJson = await env.HEARTBEAT_LOGS.get('monitor:data', { cacheTtl: 0 });
     const monitorData = monitorDataJson ? JSON.parse(monitorDataJson) : { uptime: {} };
     const allUptimeData = monitorData.uptime || {};
     const serviceData = allUptimeData[serviceId] || { days: {} };
@@ -85,7 +88,10 @@ export async function handleGetUptime(env, url) {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       }
     });
   } catch (error) {
@@ -96,7 +102,10 @@ export async function handleGetUptime(env, url) {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       }
     });
   }
