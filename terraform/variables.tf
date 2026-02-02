@@ -21,3 +21,13 @@ variable "compatibility_date" {
   default     = "2024-01-01"
 }
 
+variable "ingest_allowlist_namespace_id" {
+  type        = string
+  description = "Cloudflare KV namespace id for the ingest allowlist"
+}
+
+variable "ingest_allowlist_namespace_preview_id" {
+  type        = string
+  description = "Preview KV namespace id for the ingest allowlist"
+  default     = ""
+}

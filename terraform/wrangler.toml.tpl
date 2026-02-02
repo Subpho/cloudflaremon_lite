@@ -8,6 +8,12 @@ compatibility_date = "${compatibility_date}"
 binding = "HEARTBEAT_LOGS"
 id = "${kv_namespace_id}"
 
+# Optional KV Namespace for ingest allowlist
+[[kv_namespaces]]
+binding = "INGEST_ALLOWLIST"
+id = "${ingest_allowlist_namespace_id}"
+preview_id = "${ingest_allowlist_namespace_preview_id}"
+
 # Cron trigger - checks for stale heartbeats every 5 minutes
 [triggers]
 crons = ["*/5 * * * *"]
