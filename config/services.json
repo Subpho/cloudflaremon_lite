@@ -3,7 +3,7 @@
     {
       "id": "office-computers",
       "name": "Office Computets",
-      "services": ["showroom-pc","shop-mac","um760"],
+      "services": ["showroom-pc","shop-mac"],
       "uptimeThresholdSet": "strict",
       "stalenessThreshold": 300,
       "auth": {
@@ -20,17 +20,14 @@
     {
       "id": "showroom-pc",
       "name": "Showroom PC",
-      "enabled": true
+      "enabled": true,
+      "stalenessThreshold": 300
     },
     {
       "id": "shop-mac",
       "name": "Shop Mac",
-      "enabled": true
-    },
-    {
-      "id": "um760",
-      "name": "UM760",
-      "enabled": true
+      "enabled": true,
+      "stalenessThreshold": 300
     },
     {
       "id": "unraid-n1",
