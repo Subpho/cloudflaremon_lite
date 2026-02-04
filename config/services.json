@@ -2,7 +2,7 @@
   "groups": [
     {
       "id": "office-computers",
-      "name": "Office Computets",
+      "name": "Office Computers",
       "services": ["showroom-pc","shop-mac"],
       "uptimeThresholdSet": "strict",
       "stalenessThreshold": 300,

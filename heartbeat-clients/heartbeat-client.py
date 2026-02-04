@@ -13,7 +13,7 @@ import sys
 from datetime import datetime
 
 # Configuration
-WORKER_URL = "https://heartbeat-monitor.your-subdomain.workers.dev/api/heartbeat"
+WORKER_URL = "https://cloudflare-worker-monitor.jdjdupuie.workers.dev/api/heartbeat"
 
 # Single service mode
 SERVICE_ID = "service-1"
