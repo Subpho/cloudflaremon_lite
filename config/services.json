@@ -21,24 +21,13 @@
       "id": "showroom-pc",
       "name": "Showroom PC",
       "enabled": true,
-      "stalenessThreshold": 300
+      "stalenessThreshold": 3600
     },
     {
       "id": "shop-mac",
       "name": "Shop Mac",
       "enabled": true,
-      "stalenessThreshold": 300
-    },
-    {
-      "id": "unraid-n1",
-      "name": "Unraid N1",
-      "enabled": true,
-      "stalenessThreshold": 300,
-      "notifications": {
-        "enabled": true,
-        "channels": ["telegram"],
-        "events": ["down", "up", "degraded"]
-      }
+      "stalenessThreshold": 3600
     }
   ]
 }
