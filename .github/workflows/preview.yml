@@ -110,7 +110,7 @@ jobs:
           fi
 
       - name: Comment on PR (First-Time Setup)
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         if: success() && steps.check_setup.outputs.is_first_time == 'true'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -139,7 +139,7 @@ jobs:
             })
 
       - name: Comment on PR (Normal)
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         if: success() && steps.check_setup.outputs.is_first_time == 'false'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
